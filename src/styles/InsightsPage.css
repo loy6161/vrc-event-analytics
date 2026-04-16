@@ -374,6 +374,71 @@
   font-size: 12px;
 }
 
+/* ──── Draggable chart panels ──── */
+.insights-charts-area {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.chart-panel {
+  background: #1a1d2e;
+  border: 1px solid #2a2f42;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+
+.chart-panel.is-dragging {
+  opacity: 0.4;
+}
+
+.chart-panel.drag-over {
+  box-shadow: 0 0 0 2px var(--color-primary, #3498db);
+}
+
+.chart-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px 0;
+  cursor: grab;
+  user-select: none;
+}
+
+.chart-panel-header:active {
+  cursor: grabbing;
+}
+
+.chart-drag-handle {
+  color: #444;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  cursor: grab;
+}
+
+.chart-drag-handle:active {
+  cursor: grabbing;
+}
+
+.chart-panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin: 0;
+}
+
+.chart-panel-sub {
+  font-size: 13px;
+  color: #888;
+  margin: 0;
+}
+
+.chart-panel-body {
+  padding: 12px 20px 20px;
+}
+
 /* ──── Responsive ──── */
 @media (max-width: 900px) {
   .insights-top-row {

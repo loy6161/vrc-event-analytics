@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { RetentionChart } from './charts/RetentionChart'
 import { AttendanceTrendChart } from './charts/AttendanceTrendChart'
+import { EventTrendChart } from './charts/EventTrendChart'
 import type { EventInsights } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
 import '../styles/Charts.css'
@@ -186,6 +187,63 @@ function RecommendationCard({ rec }: { rec: EventInsights['recommendations'][num
 }
 
 // ──────────────────────────────────────────────────────────────────
+// Chart panel config
+// ──────────────────────────────────────────────────────────────────
+
+function fmtMinutes(v: number): string {
+  if (v < 60) return `${Math.round(v)}m`
+  const h = Math.floor(v / 60)
+  const m = Math.round(v % 60)
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+function fmtPct(v: number): string { return `${Math.round(v * 100)}%` }
+
+type HistoryKey = keyof Omit<EventInsights['attendance_history'][number], 'event_id' | 'event_name' | 'date'>
+
+interface PanelConfig {
+  id: string
+  title: string
+  sub?: string
+  special?: 'attendance' | 'retention' | 'community'
+  dataKey?: HistoryKey
+  color?: string
+  formatter?: (v: number) => string
+  yTickFormatter?: (v: number) => string
+}
+
+const PANEL_CONFIGS: PanelConfig[] = [
+  { id: 'attendance',         title: '参加者数の推移',       special: 'attendance' },
+  { id: 'total_joins',        title: '総Join数の推移',        dataKey: 'total_joins',        color: '#2ecc71' },
+  { id: 'peak_concurrent',    title: 'ピーク同接の推移',      dataKey: 'peak_concurrent',    color: '#e67e22' },
+  { id: 'avg_stay_duration',  title: '平均滞在時間の推移',    dataKey: 'avg_stay_duration',  color: '#9b59b6', formatter: fmtMinutes, yTickFormatter: fmtMinutes },
+  { id: 'new_attendees',      title: '新規参加者数の推移',    dataKey: 'new_attendees',      color: '#1abc9c' },
+  { id: 'returning_attendees',title: 'リピーター数の推移',    dataKey: 'returning_attendees',color: '#3498db' },
+  { id: 'retention_rate',     title: 'リテンション率の推移',  dataKey: 'retention_rate',     color: '#e74c3c', formatter: fmtPct, yTickFormatter: fmtPct },
+  { id: 'retention_analysis', title: 'リテンション分析',      special: 'retention' },
+  { id: 'community',          title: 'コミュニティ構成',      special: 'community' },
+]
+
+const DEFAULT_ORDER = PANEL_CONFIGS.map(p => p.id)
+const STORAGE_KEY = 'insights-chart-order'
+
+function loadOrder(): string[] {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored) as string[]
+      const merged = parsed.filter(id => DEFAULT_ORDER.includes(id))
+      for (const id of DEFAULT_ORDER) if (!merged.includes(id)) merged.push(id)
+      return merged
+    }
+  } catch { /* ignore */ }
+  return [...DEFAULT_ORDER]
+}
+
+function saveOrder(order: string[]) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(order)) } catch { /* ignore */ }
+}
+
+// ──────────────────────────────────────────────────────────────────
 // Main page
 // ──────────────────────────────────────────────────────────────────
 
@@ -194,6 +252,9 @@ export function InsightsPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [panelOrder, setPanelOrder] = useState<string[]>(loadOrder)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   const load = async (force = false) => {
     const cached = dataCache.get<EventInsights>('insights')
@@ -210,22 +271,36 @@ export function InsightsPage() {
 
   useEffect(() => { load() }, [])
 
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.effectAllowed = 'move'
+    setDraggingId(id)
+  }
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (id !== dragOverId) setDragOverId(id)
+  }
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault()
+    if (!draggingId || draggingId === targetId) { setDraggingId(null); setDragOverId(null); return }
+    const next = [...panelOrder]
+    const from = next.indexOf(draggingId)
+    const to = next.indexOf(targetId)
+    next.splice(from, 1)
+    next.splice(to, 0, draggingId)
+    setPanelOrder(next)
+    saveOrder(next)
+    setDraggingId(null)
+    setDragOverId(null)
+  }
+  const handleDragEnd = () => { setDraggingId(null); setDragOverId(null) }
+
   if (loading) {
-    return (
-      <div className="insights-page">
-        <div className="insights-loading">分析中...</div>
-      </div>
-    )
+    return <div className="insights-page"><div className="insights-loading">分析中...</div></div>
   }
-
   if (error) {
-    return (
-      <div className="insights-page">
-        <div className="insights-error">{error}</div>
-      </div>
-    )
+    return <div className="insights-page"><div className="insights-error">{error}</div></div>
   }
-
   if (!insights || insights.attendance_history.length === 0) {
     return (
       <div className="insights-page">
@@ -238,6 +313,47 @@ export function InsightsPage() {
       </div>
     )
   }
+
+  function renderPanelContent(cfg: PanelConfig) {
+    if (cfg.special === 'attendance') {
+      return <AttendanceTrendChart data={insights!.attendance_history} height={240} />
+    }
+    if (cfg.special === 'retention') {
+      return (
+        <>
+          <p className="chart-panel-sub">
+            全体リテンション率: <strong>{(insights!.overall_retention_rate * 100).toFixed(1)}%</strong>
+            <span className="insights-hint">（前回イベント参加者のうち、次回も参加した割合）</span>
+          </p>
+          <RetentionChart data={insights!.retention_by_event} height={280} />
+        </>
+      )
+    }
+    if (cfg.special === 'community') {
+      return (
+        <>
+          <p className="chart-panel-sub">参加頻度に基づくユーザー分類</p>
+          <CommunityDonut community={insights!.community} />
+        </>
+      )
+    }
+    if (cfg.dataKey) {
+      return (
+        <EventTrendChart
+          data={insights!.attendance_history}
+          dataKey={cfg.dataKey}
+          label={cfg.title.replace('の推移', '')}
+          color={cfg.color!}
+          formatter={cfg.formatter}
+          yTickFormatter={cfg.yTickFormatter}
+          height={240}
+        />
+      )
+    }
+    return null
+  }
+
+  const configMap = new Map(PANEL_CONFIGS.map(c => [c.id, c]))
 
   return (
     <div className="insights-page">
@@ -263,10 +379,9 @@ export function InsightsPage() {
         </div>
       </div>
 
-      {/* Health Score + Recommendations */}
+      {/* Health Score + Recommendations (fixed, not draggable) */}
       <div className="insights-top-row">
         <HealthScoreCard insights={insights} />
-
         <div className="insights-recs-panel">
           <h3 className="insights-section-title">改善アドバイス</h3>
           {insights.recommendations.length === 0 ? (
@@ -281,29 +396,31 @@ export function InsightsPage() {
         </div>
       </div>
 
-      {/* Attendance Trend */}
-      <div className="insights-card">
-        <h3 className="insights-section-title">参加者数の推移</h3>
-        <AttendanceTrendChart data={insights.attendance_history} height={260} />
-      </div>
-
-      {/* Retention */}
-      <div className="insights-card">
-        <h3 className="insights-section-title">リテンション分析</h3>
-        <p className="insights-section-sub">
-          全体リテンション率: <strong>{(insights.overall_retention_rate * 100).toFixed(1)}%</strong>
-          <span className="insights-hint">（前回イベント参加者のうち、次回も参加した割合）</span>
-        </p>
-        <RetentionChart data={insights.retention_by_event} height={300} />
-      </div>
-
-      {/* Community */}
-      <div className="insights-card">
-        <h3 className="insights-section-title">コミュニティ構成</h3>
-        <p className="insights-section-sub">
-          参加頻度に基づくユーザー分類
-        </p>
-        <CommunityDonut community={insights.community} />
+      {/* Draggable chart panels */}
+      <div className="insights-charts-area">
+        {panelOrder.map(id => {
+          const cfg = configMap.get(id)
+          if (!cfg) return null
+          return (
+            <div
+              key={id}
+              className={`chart-panel${draggingId === id ? ' is-dragging' : ''}${dragOverId === id && draggingId !== id ? ' drag-over' : ''}`}
+              draggable
+              onDragStart={e => handleDragStart(e, id)}
+              onDragOver={e => handleDragOver(e, id)}
+              onDrop={e => handleDrop(e, id)}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="chart-panel-header">
+                <span className="chart-drag-handle" title="ドラッグして並び替え">⠿</span>
+                <h3 className="chart-panel-title">{cfg.title}</h3>
+              </div>
+              <div className="chart-panel-body">
+                {renderPanelContent(cfg)}
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

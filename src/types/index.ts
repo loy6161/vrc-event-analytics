@@ -265,6 +265,11 @@ export interface EventInsights {
     date: string
     unique_attendees: number
     total_joins: number
+    peak_concurrent: number
+    avg_stay_duration: number    // minutes
+    new_attendees: number
+    returning_attendees: number
+    retention_rate: number       // 0-1
   }>
   // リテンション分析
   overall_retention_rate: number
