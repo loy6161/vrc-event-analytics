@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { createColumnHelper } from '@tanstack/react-table'
 import { DataTable } from './DataTable'
 import type { User } from '../types/index.js'
+import { dataCache } from '../utils/dataCache.js'
 import '../styles/UserTable.css'
 
 interface UserWithStats extends User {
@@ -150,7 +151,15 @@ export function UserTable({ onSelectUser }: UserTableProps) {
     setStayMinHours(''); setStayMaxHours('')
   }
 
-  const loadUsers = async (from?: string, to?: string) => {
+  const loadUsers = async (from?: string, to?: string, force = false) => {
+    const cacheKey = from || to ? `users:${from ?? ''}:${to ?? ''}` : 'users-all'
+    const cached = dataCache.get<UserWithStats[]>(cacheKey)
+    if (cached && !force) {
+      setAllUsers(cached)
+      setUsers(cached)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -160,6 +169,7 @@ export function UserTable({ onSelectUser }: UserTableProps) {
       const res = await fetch(url)
       const data = await res.json()
       if (data.success) {
+        dataCache.set(cacheKey, data.data)
         setAllUsers(data.data)
         setUsers(data.data)
       } else {
@@ -170,6 +180,11 @@ export function UserTable({ onSelectUser }: UserTableProps) {
     } finally {
       setLoading(false)
     }
+  }
+
+  const refresh = () => {
+    dataCache.deletePrefix('users')
+    loadUsers(periodStart || undefined, periodEnd || undefined, true)
   }
 
   useEffect(() => { loadUsers() }, [])
@@ -403,6 +418,10 @@ export function UserTable({ onSelectUser }: UserTableProps) {
               ✕ リセット
             </button>
           )}
+
+          <button className="btn-refresh" onClick={refresh} disabled={loading}>
+            ↻ 更新
+          </button>
         </div>
 
         {selected.size > 0 && (

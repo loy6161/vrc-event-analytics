@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Event } from '../types/index.js'
+import { dataCache } from '../utils/dataCache.js'
 import '../styles/EventList.css'
 
 interface EventListProps {
@@ -19,16 +20,17 @@ export function EventList({ onSelect }: EventListProps) {
   const [mergeTargetId, setMergeTargetId] = useState<number | null>(null)
   const [merging, setMerging] = useState(false)
 
-  useEffect(() => {
-    fetchEvents()
-  }, [])
+  useEffect(() => { fetchEvents() }, [])
 
-  const fetchEvents = async () => {
+  const fetchEvents = async (force = false) => {
+    const cached = dataCache.get<Event[]>('events')
+    if (cached && !force) { setEvents(cached); setLoading(false); return }
     try {
       setLoading(true)
       const response = await fetch('/api/events')
       const data = await response.json()
       if (data.success) {
+        dataCache.set('events', data.data)
         setEvents(data.data)
       } else {
         setError(data.error || 'Failed to fetch events')
@@ -126,9 +128,14 @@ export function EventList({ onSelect }: EventListProps) {
           <h2>イベント一覧</h2>
           <p className="event-list-desc">VRChat イベントの参加者データを管理・分析します。イベントをクリックすると詳細分析が表示されます。</p>
         </div>
-        <a href="#/events/new" className="btn btn-primary">
-          ➕ イベントを作成
-        </a>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn-refresh" onClick={() => { dataCache.delete('events'); fetchEvents(true) }}>
+            ↻ 更新
+          </button>
+          <a href="#/events/new" className="btn btn-primary">
+            ➕ イベントを作成
+          </a>
+        </div>
       </div>
 
       <div className="event-list-toolbar">

@@ -3,6 +3,7 @@ import { createColumnHelper } from '@tanstack/react-table'
 import { PeriodTrendChart } from './charts/PeriodTrendChart'
 import { DataTable } from './DataTable'
 import type { PeriodStats } from '../types/index.js'
+import { dataCache } from '../utils/dataCache.js'
 import '../styles/Charts.css'
 import '../styles/ReportsPage.css'
 
@@ -123,29 +124,34 @@ function SummaryBar({ kpis }: { kpis: SummaryKPI[] }) {
 export function ReportsPage() {
   const [allPeriods, setAllPeriods] = useState<PeriodStats[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedYear, setSelectedYear] = useState<string>('all')
 
-  // Load all monthly periods
-  useEffect(() => {
-    fetch('/api/analytics/periods')
-      .then(r => r.json())
-      .then(res => {
-        if (res.success) {
-          setAllPeriods(res.data)
-          // Default to the most recent year
-          if (res.data.length > 0) {
-            const latest = res.data[res.data.length - 1].period
-            const year = latest.slice(0, 4)
-            setSelectedYear(year)
-          }
-        } else {
-          setError(res.error ?? 'Failed to load periods')
-        }
-      })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [])
+  const load = async (force = false) => {
+    const cached = dataCache.get<PeriodStats[]>('periods')
+    if (cached && !force) {
+      setAllPeriods(cached)
+      if (selectedYear === 'all' && cached.length > 0) setSelectedYear(cached[cached.length - 1].period.slice(0, 4))
+      setLoading(false)
+      return
+    }
+    try {
+      const res = await fetch('/api/analytics/periods').then(r => r.json())
+      if (res.success) {
+        dataCache.set('periods', res.data)
+        setAllPeriods(res.data)
+        if (res.data.length > 0) setSelectedYear(res.data[res.data.length - 1].period.slice(0, 4))
+      } else {
+        setError(res.error ?? 'Failed to load periods')
+      }
+    } catch (err: any) { setError(err.message) }
+    finally { setLoading(false); setRefreshing(false) }
+  }
+
+  const refresh = () => { dataCache.delete('periods'); setRefreshing(true); load(true) }
+
+  useEffect(() => { load() }, [])
 
   // Extract unique years
   const availableYears = useMemo(() => {
@@ -195,6 +201,9 @@ export function ReportsPage() {
       <div className="reports-header">
         <div className="reports-title-row">
           <h1>レポート</h1>
+          <button className="btn-refresh" onClick={refresh} disabled={refreshing}>
+            ↻ {refreshing ? '更新中...' : '更新'}
+          </button>
         </div>
         <p>月別・年別の参加者トレンド</p>
       </div>

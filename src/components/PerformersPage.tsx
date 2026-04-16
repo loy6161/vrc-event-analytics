@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { dataCache } from '../utils/dataCache.js'
 import '../styles/PerformersPage.css'
 
 interface PerformerEvent {
@@ -23,20 +24,25 @@ interface Performer {
 export function PerformersPage() {
   const [performers, setPerformers] = useState<Performer[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [roleFilter, setRoleFilter] = useState<'all' | 'regular' | 'visitor'>('all')
 
-  useEffect(() => {
-    fetch('/api/users/performers')
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) setPerformers(data.data)
-        else setError(data.error ?? 'Failed to load performers')
-      })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [])
+  const load = async (force = false) => {
+    const cached = dataCache.get<Performer[]>('performers')
+    if (cached && !force) { setPerformers(cached); setLoading(false); return }
+    try {
+      const data = await fetch('/api/users/performers').then(r => r.json())
+      if (data.success) { dataCache.set('performers', data.data); setPerformers(data.data) }
+      else setError(data.error ?? 'Failed to load performers')
+    } catch (err: any) { setError(err.message) }
+    finally { setLoading(false); setRefreshing(false) }
+  }
+
+  const refresh = () => { dataCache.delete('performers'); setRefreshing(true); load(true) }
+
+  useEffect(() => { load() }, [])
 
   const toggleExpand = (id: number) => {
     const next = new Set(expanded)
@@ -64,6 +70,9 @@ export function PerformersPage() {
             レギュラー・ビジター出演者の出演回数と履歴を確認できます。
           </p>
         </div>
+        <button className="btn-refresh" onClick={refresh} disabled={refreshing}>
+          ↻ {refreshing ? '更新中...' : '更新'}
+        </button>
       </div>
 
       {/* サマリーカード */}
