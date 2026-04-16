@@ -394,6 +394,76 @@
   line-height: 1.4;
 }
 
+/* ──── 準市民アラート ──── */
+.dash-prep-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dash-prep-alert {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 8px;
+  border-left: 4px solid;
+}
+
+.dash-prep-alert-expired {
+  background: rgba(231, 76, 60, 0.1);
+  border-color: #e74c3c;
+}
+
+.dash-prep-alert-promotion {
+  background: rgba(39, 174, 96, 0.1);
+  border-color: #27ae60;
+}
+
+.dash-prep-alert-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.dash-prep-alert-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.dash-prep-alert-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-bottom: 2px;
+}
+
+.dash-prep-alert-desc {
+  font-size: 13px;
+  color: #aaa;
+}
+
+.dash-prep-alert-desc strong {
+  color: #e0e0e0;
+}
+
+.dash-prep-alert-badge {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dash-prep-alert-expired .dash-prep-alert-badge {
+  background: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+}
+
+.dash-prep-alert-promotion .dash-prep-alert-badge {
+  background: rgba(39, 174, 96, 0.2);
+  color: #27ae60;
+}
+
 /* ──── Responsive ──── */
 @media (max-width: 1100px) {
   .dash-quick-links {

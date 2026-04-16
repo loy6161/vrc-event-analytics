@@ -150,9 +150,14 @@ export function UserTable({ onSelectUser }: UserTableProps) {
     setStayMinHours(''); setStayMaxHours('')
   }
 
-  const loadUsers = async () => {
+  const loadUsers = async (from?: string, to?: string) => {
+    setLoading(true)
     try {
-      const res = await fetch('/api/users')
+      const params = new URLSearchParams()
+      if (from) params.set('from', from)
+      if (to) params.set('to', to)
+      const url = `/api/users${params.toString() ? '?' + params.toString() : ''}`
+      const res = await fetch(url)
       const data = await res.json()
       if (data.success) {
         setAllUsers(data.data)
@@ -169,6 +174,11 @@ export function UserTable({ onSelectUser }: UserTableProps) {
 
   useEffect(() => { loadUsers() }, [])
 
+  // 期間が変わったらサーバーから再取得（統計値も期間内で再計算）
+  useEffect(() => {
+    loadUsers(periodStart || undefined, periodEnd || undefined)
+  }, [periodStart, periodEnd])
+
   useEffect(() => {
     let filtered = allUsers
 
@@ -180,25 +190,6 @@ export function UserTable({ onSelectUser }: UserTableProps) {
     else if (excludedFilter === 'not-excluded') filtered = filtered.filter(u => !u.is_excluded)
 
     if (tagFilter) filtered = filtered.filter(u => u.tags?.includes(tagFilter))
-
-    // 期間フィルター: 期間内に在席歴があるユーザー
-    if (periodStart || periodEnd) {
-      filtered = filtered.filter(u => {
-        const first = u.first_attendance ? new Date(u.first_attendance) : null
-        const last = u.last_attendance ? new Date(u.last_attendance) : null
-        if (!first && !last) return false
-        if (periodStart) {
-          const start = new Date(periodStart)
-          if (last && last < start) return false
-        }
-        if (periodEnd) {
-          const end = new Date(periodEnd)
-          end.setHours(23, 59, 59, 999)
-          if (first && first > end) return false
-        }
-        return true
-      })
-    }
 
     // 初参加から何日
     if (firstDaysMin || firstDaysMax) {
@@ -244,7 +235,6 @@ export function UserTable({ onSelectUser }: UserTableProps) {
     setUsers(filtered)
   }, [
     allUsers, tagFilter, staffFilter, excludedFilter,
-    periodStart, periodEnd,
     firstDaysMin, firstDaysMax,
     lastDaysMin, lastDaysMax,
     countMin, countMax,

@@ -25,6 +25,14 @@ interface DashboardData {
   previous_month: PeriodStats | null
 }
 
+interface PrepCitizenAlert {
+  display_name: string
+  type: 'expired' | 'promotion'
+  days_since_last?: number
+  attendance_count?: number
+  total_stay_hours?: number
+}
+
 // ─────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────
@@ -94,10 +102,20 @@ function MonthCard({ title, stats }: MonthCardProps) {
 // Main component
 // ─────────────────────────────────────────────
 
+function daysSince(dateStr: string | undefined): number | null {
+  if (!dateStr) return null
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const d = new Date(dateStr)
+  d.setHours(0, 0, 0, 0)
+  return Math.round((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
+}
+
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [prepAlerts, setPrepAlerts] = useState<PrepCitizenAlert[]>([])
 
   useEffect(() => {
     fetch('/api/analytics/dashboard')
@@ -108,6 +126,38 @@ export function Dashboard() {
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/users')
+      .then(r => r.json())
+      .then(res => {
+        if (!res.success) return
+        const alerts: PrepCitizenAlert[] = []
+        for (const user of res.data) {
+          if (!Array.isArray(user.tags) || !user.tags.includes('準市民')) continue
+          const days = daysSince(user.last_attendance)
+          // 市民権失効: 最終参加から90日以上経過
+          if (days !== null && days >= 90) {
+            alerts.push({
+              display_name: user.display_name,
+              type: 'expired',
+              days_since_last: days,
+            })
+          }
+          // 昇格: 参加3回以上 AND 合計滞在360分（6時間）以上
+          else if (user.attendance_count >= 3 && user.total_stay_duration >= 360) {
+            alerts.push({
+              display_name: user.display_name,
+              type: 'promotion',
+              attendance_count: user.attendance_count,
+              total_stay_hours: Math.round((user.total_stay_duration / 60) * 10) / 10,
+            })
+          }
+        }
+        setPrepAlerts(alerts)
+      })
+      .catch(() => {})
   }, [])
 
   if (loading) {
@@ -237,6 +287,40 @@ export function Dashboard() {
                   </span>
                 </div>
               </a>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* 準市民アラート */}
+      {prepAlerts.length > 0 && (
+        <section className="dash-section">
+          <h2 className="dash-section-title">準市民アラート</h2>
+          <div className="dash-prep-alerts">
+            {prepAlerts.map(alert => (
+              <div
+                key={alert.display_name}
+                className={`dash-prep-alert dash-prep-alert-${alert.type}`}
+              >
+                <div className="dash-prep-alert-icon">
+                  {alert.type === 'expired' ? '⚠️' : '🎉'}
+                </div>
+                <div className="dash-prep-alert-body">
+                  <div className="dash-prep-alert-name">{alert.display_name}</div>
+                  {alert.type === 'expired' ? (
+                    <div className="dash-prep-alert-desc">
+                      市民権失効 — 最終参加から <strong>{alert.days_since_last}</strong> 日経過
+                    </div>
+                  ) : (
+                    <div className="dash-prep-alert-desc">
+                      昇格条件達成 — 参加 <strong>{alert.attendance_count}</strong> 回 / 合計滞在 <strong>{alert.total_stay_hours}</strong>h
+                    </div>
+                  )}
+                </div>
+                <div className="dash-prep-alert-badge">
+                  {alert.type === 'expired' ? '市民権失効' : '昇格'}
+                </div>
+              </div>
             ))}
           </div>
         </section>
