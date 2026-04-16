@@ -15,9 +15,7 @@ interface UserWithStats extends User {
 const col = createColumnHelper<UserWithStats>()
 
 function formatMinutes(minutes: number): string {
-  if (minutes < 60) {
-    return `${Math.round(minutes)}m`
-  }
+  if (minutes < 60) return `${Math.round(minutes)}m`
   const hours = Math.floor(minutes / 60)
   const mins = Math.round(minutes % 60)
   return `${hours}h ${mins}m`
@@ -102,6 +100,15 @@ interface UserTableProps {
   onSelectUser?: (user: UserWithStats) => void
 }
 
+function daysSince(dateStr: string | undefined): number | null {
+  if (!dateStr) return null
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const d = new Date(dateStr)
+  d.setHours(0, 0, 0, 0)
+  return Math.round((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
+}
+
 export function UserTable({ onSelectUser }: UserTableProps) {
   const [users, setUsers] = useState<UserWithStats[]>([])
   const [allUsers, setAllUsers] = useState<UserWithStats[]>([])
@@ -113,6 +120,35 @@ export function UserTable({ onSelectUser }: UserTableProps) {
   const [excludedFilter, setExcludedFilter] = useState<'all' | 'excluded' | 'not-excluded'>('all')
   const [updating, setUpdating] = useState(false)
   const [bulkTagInput, setBulkTagInput] = useState('')
+
+  // 詳細フィルター
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [periodStart, setPeriodStart] = useState('')
+  const [periodEnd, setPeriodEnd] = useState('')
+  const [firstDaysMin, setFirstDaysMin] = useState('')
+  const [firstDaysMax, setFirstDaysMax] = useState('')
+  const [lastDaysMin, setLastDaysMin] = useState('')
+  const [lastDaysMax, setLastDaysMax] = useState('')
+  const [countMin, setCountMin] = useState('')
+  const [countMax, setCountMax] = useState('')
+  const [stayMinHours, setStayMinHours] = useState('')
+  const [stayMaxHours, setStayMaxHours] = useState('')
+
+  const hasAdvancedFilters = !!(
+    periodStart || periodEnd ||
+    firstDaysMin || firstDaysMax ||
+    lastDaysMin || lastDaysMax ||
+    countMin || countMax ||
+    stayMinHours || stayMaxHours
+  )
+
+  const resetAdvancedFilters = () => {
+    setPeriodStart(''); setPeriodEnd('')
+    setFirstDaysMin(''); setFirstDaysMax('')
+    setLastDaysMin(''); setLastDaysMax('')
+    setCountMin(''); setCountMax('')
+    setStayMinHours(''); setStayMaxHours('')
+  }
 
   const loadUsers = async () => {
     try {
@@ -133,10 +169,10 @@ export function UserTable({ onSelectUser }: UserTableProps) {
 
   useEffect(() => { loadUsers() }, [])
 
-  // フィルタを適用
   useEffect(() => {
     let filtered = allUsers
 
+    // 基本フィルター
     if (staffFilter === 'staff') filtered = filtered.filter(u => u.is_staff)
     else if (staffFilter === 'non-staff') filtered = filtered.filter(u => !u.is_staff)
 
@@ -145,8 +181,75 @@ export function UserTable({ onSelectUser }: UserTableProps) {
 
     if (tagFilter) filtered = filtered.filter(u => u.tags?.includes(tagFilter))
 
+    // 期間フィルター: 期間内に在席歴があるユーザー
+    if (periodStart || periodEnd) {
+      filtered = filtered.filter(u => {
+        const first = u.first_attendance ? new Date(u.first_attendance) : null
+        const last = u.last_attendance ? new Date(u.last_attendance) : null
+        if (!first && !last) return false
+        if (periodStart) {
+          const start = new Date(periodStart)
+          if (last && last < start) return false
+        }
+        if (periodEnd) {
+          const end = new Date(periodEnd)
+          end.setHours(23, 59, 59, 999)
+          if (first && first > end) return false
+        }
+        return true
+      })
+    }
+
+    // 初参加から何日
+    if (firstDaysMin || firstDaysMax) {
+      filtered = filtered.filter(u => {
+        const days = daysSince(u.first_attendance)
+        if (days === null) return false
+        if (firstDaysMin && days < parseInt(firstDaysMin)) return false
+        if (firstDaysMax && days > parseInt(firstDaysMax)) return false
+        return true
+      })
+    }
+
+    // 最終参加から何日
+    if (lastDaysMin || lastDaysMax) {
+      filtered = filtered.filter(u => {
+        const days = daysSince(u.last_attendance)
+        if (days === null) return false
+        if (lastDaysMin && days < parseInt(lastDaysMin)) return false
+        if (lastDaysMax && days > parseInt(lastDaysMax)) return false
+        return true
+      })
+    }
+
+    // 参加回数
+    if (countMin || countMax) {
+      filtered = filtered.filter(u => {
+        if (countMin && u.attendance_count < parseInt(countMin)) return false
+        if (countMax && u.attendance_count > parseInt(countMax)) return false
+        return true
+      })
+    }
+
+    // 滞在時間（時間単位）
+    if (stayMinHours || stayMaxHours) {
+      filtered = filtered.filter(u => {
+        const hours = u.total_stay_duration / 60
+        if (stayMinHours && hours < parseFloat(stayMinHours)) return false
+        if (stayMaxHours && hours > parseFloat(stayMaxHours)) return false
+        return true
+      })
+    }
+
     setUsers(filtered)
-  }, [allUsers, tagFilter, staffFilter, excludedFilter])
+  }, [
+    allUsers, tagFilter, staffFilter, excludedFilter,
+    periodStart, periodEnd,
+    firstDaysMin, firstDaysMax,
+    lastDaysMin, lastDaysMax,
+    countMin, countMax,
+    stayMinHours, stayMaxHours,
+  ])
 
   const allTags = Array.from(new Set(allUsers.flatMap(u => u.tags || [])))
 
@@ -286,6 +389,20 @@ export function UserTable({ onSelectUser }: UserTableProps) {
               <option key={tag} value={tag}>{tag}</option>
             ))}
           </select>
+
+          <button
+            className={`advanced-filter-toggle${advancedOpen ? ' active' : ''}${hasAdvancedFilters ? ' has-filters' : ''}`}
+            onClick={() => setAdvancedOpen(o => !o)}
+          >
+            {advancedOpen ? '▲' : '▼'} 詳細フィルター
+            {hasAdvancedFilters && <span className="filter-active-dot" />}
+          </button>
+
+          {hasAdvancedFilters && (
+            <button className="filter-reset-btn" onClick={resetAdvancedFilters}>
+              ✕ リセット
+            </button>
+          )}
         </div>
 
         {selected.size > 0 && (
@@ -342,6 +459,142 @@ export function UserTable({ onSelectUser }: UserTableProps) {
             </div>
           </div>
         )}
+      </div>
+
+      {/* 詳細フィルターパネル */}
+      {advancedOpen && (
+        <div className="advanced-filters-panel">
+          {/* 期間 */}
+          <div className="filter-row">
+            <span className="filter-row-label">期間</span>
+            <div className="filter-row-inputs">
+              <input
+                type="date"
+                className="filter-input"
+                value={periodStart}
+                onChange={e => setPeriodStart(e.target.value)}
+              />
+              <span className="filter-range-sep">〜</span>
+              <input
+                type="date"
+                className="filter-input"
+                value={periodEnd}
+                onChange={e => setPeriodEnd(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* 初参加から何日 */}
+          <div className="filter-row">
+            <span className="filter-row-label">初参加から</span>
+            <div className="filter-row-inputs">
+              <input
+                type="number"
+                className="filter-input filter-input-num"
+                placeholder="0"
+                min="0"
+                value={firstDaysMin}
+                onChange={e => setFirstDaysMin(e.target.value)}
+              />
+              <span className="filter-unit">日以上</span>
+              <span className="filter-range-sep">〜</span>
+              <input
+                type="number"
+                className="filter-input filter-input-num"
+                placeholder="∞"
+                min="0"
+                value={firstDaysMax}
+                onChange={e => setFirstDaysMax(e.target.value)}
+              />
+              <span className="filter-unit">日以下</span>
+            </div>
+          </div>
+
+          {/* 最終参加から何日 */}
+          <div className="filter-row">
+            <span className="filter-row-label">最終参加から</span>
+            <div className="filter-row-inputs">
+              <input
+                type="number"
+                className="filter-input filter-input-num"
+                placeholder="0"
+                min="0"
+                value={lastDaysMin}
+                onChange={e => setLastDaysMin(e.target.value)}
+              />
+              <span className="filter-unit">日以上</span>
+              <span className="filter-range-sep">〜</span>
+              <input
+                type="number"
+                className="filter-input filter-input-num"
+                placeholder="∞"
+                min="0"
+                value={lastDaysMax}
+                onChange={e => setLastDaysMax(e.target.value)}
+              />
+              <span className="filter-unit">日以下</span>
+            </div>
+          </div>
+
+          {/* 参加回数 */}
+          <div className="filter-row">
+            <span className="filter-row-label">参加回数</span>
+            <div className="filter-row-inputs">
+              <input
+                type="number"
+                className="filter-input filter-input-num"
+                placeholder="0"
+                min="0"
+                value={countMin}
+                onChange={e => setCountMin(e.target.value)}
+              />
+              <span className="filter-unit">回以上</span>
+              <span className="filter-range-sep">〜</span>
+              <input
+                type="number"
+                className="filter-input filter-input-num"
+                placeholder="∞"
+                min="0"
+                value={countMax}
+                onChange={e => setCountMax(e.target.value)}
+              />
+              <span className="filter-unit">回以下</span>
+            </div>
+          </div>
+
+          {/* 合計滞在時間 */}
+          <div className="filter-row">
+            <span className="filter-row-label">合計滞在時間</span>
+            <div className="filter-row-inputs">
+              <input
+                type="number"
+                className="filter-input filter-input-num"
+                placeholder="0"
+                min="0"
+                step="0.5"
+                value={stayMinHours}
+                onChange={e => setStayMinHours(e.target.value)}
+              />
+              <span className="filter-unit">時間以上</span>
+              <span className="filter-range-sep">〜</span>
+              <input
+                type="number"
+                className="filter-input filter-input-num"
+                placeholder="∞"
+                min="0"
+                step="0.5"
+                value={stayMaxHours}
+                onChange={e => setStayMaxHours(e.target.value)}
+              />
+              <span className="filter-unit">時間以下</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="user-table-count">
+        {users.length} 人表示中
+        {allUsers.length !== users.length && ` / ${allUsers.length} 人中`}
       </div>
 
       <DataTable
