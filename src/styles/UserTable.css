@@ -360,6 +360,22 @@
   box-shadow: 0 0 0 2px var(--color-primary-light);
 }
 
+/* ダークテーマでカレンダーアイコンを見えるようにする */
+.filter-input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.filter-input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* date入力の色がブラウザデフォルトで暗くならないよう上書き */
+.filter-input[type="date"] {
+  color-scheme: dark;
+}
+
 .filter-input-num {
   width: 80px;
   text-align: right;
