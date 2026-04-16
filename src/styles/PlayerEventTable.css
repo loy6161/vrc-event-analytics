@@ -1,0 +1,118 @@
+.player-event-table {
+  width: 100%;
+}
+
+/* Loading / error states */
+.pet-loading,
+.pet-error {
+  background: var(--color-surface);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+  padding: 48px 24px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.pet-error {
+  background: var(--color-danger-bg);
+  color: #e74c3c;
+  border-left: 4px solid #e74c3c;
+}
+
+/* ──── Tab bar ──── */
+.pet-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.pet-tab {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface-alt);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.pet-tab:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.pet-tab.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary-dark);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ──── Cell helpers ──── */
+.event-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.event-badge--join {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+
+.event-badge--leave {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.user-id-cell {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--color-text-faint);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+
+.log-file-cell {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.na-cell {
+  color: var(--color-text-faint);
+}
+
+.display-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.no-id-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  cursor: help;
+}

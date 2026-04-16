@@ -1,0 +1,443 @@
+/* ──── YouTube Page ──── */
+.youtube-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.youtube-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.youtube-page-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin: 0;
+}
+
+/* ──── Add Stream Form ──── */
+.yt-add-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.yt-add-form input {
+  padding: 8px 12px;
+  border: 1px solid #3a3f55;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  width: 340px;
+  outline: none;
+  transition: border-color 0.15s;
+  background: #0f111a;
+  color: #e0e0e0;
+}
+
+.yt-add-form input:focus {
+  border-color: #e74c3c;
+}
+
+.yt-add-form select {
+  padding: 8px 12px;
+  border: 1px solid #3a3f55;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #0f111a;
+  cursor: pointer;
+  color: #e0e0e0;
+}
+
+.yt-add-form .btn-yt {
+  padding: 8px 18px;
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.yt-add-form .btn-yt:hover {
+  background: #c0392b;
+}
+
+.yt-add-form .btn-yt:disabled {
+  background: #888;
+  cursor: not-allowed;
+}
+
+/* ──── API Key Warning ──── */
+.yt-api-warning {
+  background: rgba(243, 156, 18, 0.15);
+  border: 1px solid #f39c12;
+  border-radius: 8px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: #f39c12;
+}
+
+.yt-api-warning a {
+  color: #f39c12;
+  font-weight: 600;
+}
+
+/* ──── Stream List ──── */
+.yt-stream-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.yt-stream-card {
+  background: #1a1d2e;
+  border: 1px solid #2a2f42;
+  border-radius: 8px;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.yt-stream-card:hover {
+  border-color: #ff6b6b;
+  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.15);
+}
+
+.yt-stream-card.selected {
+  border-color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.yt-stream-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: #0f111a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.yt-stream-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.yt-stream-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin: 0 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yt-stream-meta {
+  font-size: 12px;
+  color: #888;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.yt-stream-meta span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.yt-stream-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.yt-stream-actions button {
+  padding: 6px 12px;
+  border: 1px solid #3a3f55;
+  border-radius: 4px;
+  background: #0f111a;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  color: #ddd;
+}
+
+.yt-stream-actions button:hover {
+  background: #1a1d2e;
+}
+
+.yt-stream-actions .btn-danger {
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}
+
+.yt-stream-actions .btn-danger:hover {
+  background: #ff6b6b;
+  color: #fff;
+}
+
+/* ──── Detail Panel ──── */
+.yt-detail-panel {
+  background: #1a1d2e;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.yt-detail-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #2a2f42;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.yt-detail-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin: 0 0 4px;
+}
+
+.yt-detail-channel {
+  font-size: 13px;
+  color: #888;
+}
+
+.yt-detail-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.yt-detail-actions button,
+.yt-detail-actions .export-btn {
+  padding: 6px 14px;
+  border: 1px solid #3a3f55;
+  border-radius: 4px;
+  background: #0f111a;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+  color: #ddd;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.yt-detail-actions button:hover,
+.yt-detail-actions .export-btn:hover {
+  background: rgba(91, 155, 213, 0.15);
+  border-color: #5b9bd5;
+  color: #5b9bd5;
+}
+
+.yt-detail-actions .btn-yt {
+  background: #ff6b6b;
+  border-color: #ff6b6b;
+  color: #fff;
+}
+
+.yt-detail-actions .btn-yt:hover {
+  background: #ff5252;
+}
+
+.yt-detail-actions .btn-yt:disabled {
+  background: #888;
+  border-color: #888;
+  cursor: not-allowed;
+}
+
+/* ──── Stats Grid ──── */
+.yt-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 20px 24px;
+}
+
+.yt-stat-card {
+  background: #0f111a;
+  border: 1px solid #2a2f42;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.yt-stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.yt-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin-top: 4px;
+}
+
+.yt-stat-value.red { color: #ff6b6b; }
+.yt-stat-value.blue { color: #5b9bd5; }
+.yt-stat-value.green { color: #51cf66; }
+.yt-stat-value.orange { color: #f39c12; }
+
+.yt-stat-sub {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+
+/* ──── Tabs ──── */
+.yt-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 24px;
+  border-bottom: 2px solid #2a2f42;
+}
+
+.yt-tab {
+  padding: 10px 18px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #888;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.yt-tab:hover {
+  color: #ff6b6b;
+}
+
+.yt-tab.active {
+  color: #ff6b6b;
+  border-bottom-color: #ff6b6b;
+  font-weight: 600;
+}
+
+.yt-tab-body {
+  padding: 24px;
+}
+
+/* ──── Chat Users Table ──── */
+.yt-user-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 6px;
+}
+
+.yt-user-badge.mod {
+  background: #3498db;
+  color: #fff;
+}
+
+.yt-user-badge.member {
+  background: #2ecc71;
+  color: #fff;
+}
+
+/* ──── Super Chat Summary ──── */
+.yt-sc-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.yt-sc-card {
+  background: rgba(243, 156, 18, 0.1);
+  border: 1px solid #f39c12;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.yt-sc-card .yt-stat-label {
+  color: #f39c12;
+}
+
+.yt-sc-card .yt-stat-value {
+  color: #f39c12;
+}
+
+/* ──── Loading / Error ──── */
+.yt-loading,
+.yt-empty {
+  padding: 48px 24px;
+  text-align: center;
+  font-size: 14px;
+  color: #888;
+}
+
+.yt-error {
+  background: rgba(220, 51, 51, 0.15);
+  color: #ff6b6b;
+  border-left: 4px solid #ff6b6b;
+  padding: 12px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+/* ──── Responsive ──── */
+@media (max-width: 1024px) {
+  .yt-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .yt-sc-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .youtube-page-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .yt-add-form {
+    flex-wrap: wrap;
+  }
+  .yt-add-form input {
+    width: 100%;
+  }
+  .yt-stream-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .yt-stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .yt-sc-summary {
+    grid-template-columns: 1fr;
+  }
+}

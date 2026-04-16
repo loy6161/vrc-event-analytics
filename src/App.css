@@ -1,0 +1,32 @@
+/* App-level overrides — global design tokens & utilities live in index.css */
+
+/* Generic page headings */
+.page h1 {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  color: var(--color-text-dark);
+  margin: 0 0 20px 0;
+}
+
+.page h2 {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  color: var(--color-text-dark);
+  margin: 0 0 16px 0;
+}
+
+.page p {
+  color: #666;
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+}
+
+/* "Coming soon" placeholder card (empty page) */
+.page > p:only-of-type {
+  background: var(--color-surface);
+  padding: 60px 24px;
+  border-radius: var(--radius-lg);
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  color: var(--color-text-muted);
+}
