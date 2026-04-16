@@ -1,0 +1,205 @@
+.ranking-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ──── Header ──── */
+.ranking-header {
+  margin-bottom: 4px;
+}
+
+.ranking-title-row h1 {
+  font-size: 32px;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin: 0 0 8px 0;
+}
+
+.ranking-header p {
+  font-size: 15px;
+  color: #888;
+  margin: 0;
+}
+
+/* ──── Controls row ──── */
+.ranking-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Sort tabs */
+.sort-tabs {
+  display: flex;
+  border: 1px solid #3a3f55;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.sort-tab {
+  padding: 8px 18px;
+  border: none;
+  background: #0f111a;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 500;
+  color: #ddd;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sort-tab + .sort-tab {
+  border-left: 1px solid #3a3f55;
+}
+
+.sort-tab:hover {
+  background: #1a1d2e;
+}
+
+.sort-tab.active {
+  background: #5b9bd5;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Year filter — reuse from ReportsPage */
+.ranking-year-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.year-btn {
+  padding: 7px 16px;
+  border: 1px solid #3a3f55;
+  border-radius: 20px;
+  background: #0f111a;
+  font-size: 14px;
+  font-family: inherit;
+  color: #ddd;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.year-btn:hover {
+  border-color: #5b9bd5;
+  color: #5b9bd5;
+}
+
+.year-btn.active {
+  background: #5b9bd5;
+  border-color: #5b9bd5;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ──── Loading / error / empty ──── */
+.ranking-loading,
+.ranking-error,
+.ranking-empty {
+  background: #1a1d2e;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  padding: 64px 24px;
+  text-align: center;
+  color: #888;
+  font-size: 15px;
+}
+
+.ranking-error {
+  background: rgba(220, 51, 51, 0.15);
+  color: #ff6b6b;
+  border-left: 4px solid #ff6b6b;
+}
+
+.ranking-empty p {
+  margin: 0 0 16px 0;
+}
+
+.btn-link {
+  color: #5b9bd5;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+/* ──── Card ──── */
+.ranking-card {
+  background: #1a1d2e;
+  border-radius: 8px;
+  padding: 20px 20px 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ──── Rank badges ──── */
+.rank-badge {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rank-number {
+  font-size: 13px;
+  font-weight: 600;
+  color: #888;
+}
+
+/* ──── Value highlights ──── */
+.ranking-primary-value {
+  font-weight: 700;
+  color: #5b9bd5;
+}
+
+/* ──── User link in table ──── */
+.ranking-user-link {
+  color: #e0e0e0;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.15s;
+}
+
+.ranking-user-link:hover {
+  color: #5b9bd5;
+  text-decoration: underline;
+}
+
+/* ──── Tooltip ──── */
+.ranking-tooltip {
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.tooltip-name {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.tooltip-value {
+  color: #b8d9f5;
+}
+
+/* ──── Responsive ──── */
+@media (max-width: 768px) {
+  .ranking-title-row h1 {
+    font-size: 24px;
+  }
+
+  .ranking-controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

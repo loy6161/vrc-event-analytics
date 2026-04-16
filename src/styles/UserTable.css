@@ -1,0 +1,250 @@
+.user-table-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.user-table-page-header {
+  margin-bottom: -4px;
+}
+
+.user-table-page-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text-dark);
+  margin: 0 0 4px;
+}
+
+.user-table-desc {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.user-table-loading,
+.user-table-error {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 64px 24px;
+  text-align: center;
+  font-size: var(--font-size-md);
+}
+
+.user-table-error {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-left: 4px solid var(--color-danger);
+}
+
+.user-table-loading {
+  color: var(--color-text-muted);
+}
+
+.user-name {
+  font-weight: 500;
+  color: var(--color-text-dark);
+}
+
+.user-visits {
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+/* Badge — local overrides on top of global .badge */
+.badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 10px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.badge-staff {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.badge-excluded {
+  background: rgba(220, 51, 51, 0.12);
+  color: #ff6b6b;
+}
+
+.badge-regular {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
+.badge-visitor {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+/* 出演者ロールボタン */
+.btn-regular {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-regular:hover:not(:disabled) {
+  background: #8b5cf6;
+  color: #fff;
+  border-color: #8b5cf6;
+}
+
+.btn-visitor {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-visitor:hover:not(:disabled) {
+  background: #10b981;
+  color: #fff;
+  border-color: #10b981;
+}
+
+.btn-regular:disabled,
+.btn-visitor:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Tag pills */
+.tag-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  border-radius: 10px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+}
+
+.user-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ──── Toolbar ──── */
+.user-table-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: 10px 0;
+  flex-wrap: wrap;
+}
+
+.user-table-filters {
+  display: flex;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.filter-select {
+  padding: 7px 12px;
+  border: 1px solid var(--color-border-input);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-dark);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+/* ──── Action Bar (shown when rows selected) ──── */
+.user-table-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 7px 14px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.selection-info {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--color-text-dark);
+  min-width: 70px;
+}
+
+/* 除外ボタン */
+.btn-excluded {
+  background: rgba(220, 51, 51, 0.15);
+  color: #ff6b6b;
+  border: 1px solid rgba(220, 51, 51, 0.3);
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-excluded:hover:not(:disabled) {
+  background: #e74c3c;
+  color: #fff;
+  border-color: #e74c3c;
+}
+
+.btn-excluded:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-divider {
+  color: var(--color-border);
+  font-size: 16px;
+  padding: 0 2px;
+}
+
+.bulk-tag-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.bulk-tag-input {
+  padding: 5px 10px;
+  border: 1px solid var(--color-border-input);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-family: inherit;
+  background: var(--color-surface);
+  color: var(--color-text-dark);
+  width: 120px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.bulk-tag-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+}

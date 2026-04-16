@@ -1,0 +1,218 @@
+.reports-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ──── Header ──── */
+.reports-header {
+  margin-bottom: 4px;
+}
+
+.reports-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.reports-title-row h1 {
+  font-size: 32px;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin: 0 0 8px 0;
+}
+
+.reports-header p {
+  font-size: 15px;
+  color: #888;
+  margin: 0;
+}
+
+/* ──── Loading / error / empty ──── */
+.reports-loading,
+.reports-error,
+.reports-empty {
+  background: #1a1d2e;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  padding: 64px 24px;
+  text-align: center;
+  color: #888;
+  font-size: 15px;
+}
+
+.reports-error {
+  background: rgba(220, 51, 51, 0.15);
+  color: #ff6b6b;
+  border-left: 4px solid #ff6b6b;
+}
+
+.reports-empty p {
+  margin: 0 0 16px 0;
+}
+
+.btn-link {
+  color: #5b9bd5;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+/* ──── Year filter ──── */
+.reports-year-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.year-btn {
+  padding: 7px 16px;
+  border: 1px solid #3a3f55;
+  border-radius: 20px;
+  background: #0f111a;
+  font-size: 14px;
+  font-family: inherit;
+  color: #ddd;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.year-btn:hover {
+  border-color: #5b9bd5;
+  color: #5b9bd5;
+}
+
+.year-btn.active {
+  background: #5b9bd5;
+  border-color: #5b9bd5;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ──── Summary KPI bar ──── */
+.report-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+}
+
+.report-kpi {
+  background: #1a1d2e;
+  border-radius: 8px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.report-kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.report-kpi-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #e0e0e0;
+  line-height: 1.1;
+}
+
+.report-kpi-sub {
+  font-size: 10px;
+  color: #888;
+  margin-top: 2px;
+}
+
+/* ──── Cards ──── */
+.reports-card {
+  background: #1a1d2e;
+  border-radius: 8px;
+  padding: 20px 20px 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chart-legend-note {
+  font-size: 12px;
+  color: #888;
+  text-align: center;
+  padding-top: 4px;
+}
+
+/* ──── Repeat rate cell ──── */
+.rate-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.rate-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: #5b9bd5;
+  max-width: 60px;
+  min-width: 2px;
+  opacity: 0.6;
+}
+
+.rate-text {
+  font-size: 13px;
+  color: #ddd;
+  white-space: nowrap;
+}
+
+/* ──── Period cell ──── */
+.period-cell {
+  font-weight: 500;
+  color: #e0e0e0;
+}
+
+/* ──── Responsive ──── */
+@media (max-width: 1280px) {
+  .report-summary-bar {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .reports-title-row h1 {
+    font-size: 24px;
+  }
+
+  .report-summary-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .report-kpi-value {
+    font-size: 20px;
+  }
+
+  .reports-card {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .report-summary-bar {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .report-kpi {
+    padding: 10px 12px;
+  }
+}

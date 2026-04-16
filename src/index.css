@@ -1,0 +1,444 @@
+/* ══════════════════════════════════════════
+   Design Tokens (CSS Custom Properties)
+   ══════════════════════════════════════════ */
+:root {
+  /* Brand Colors */
+  --color-primary:        #5b9bd5;
+  --color-primary-dark:   #4a8bc2;
+  --color-primary-light:  rgba(91, 155, 213, 0.15);
+
+  /* Semantic Colors */
+  --color-success:        #2ecc71;
+  --color-danger:         #e74c3c;
+  --color-danger-bg:      rgba(231, 76, 60, 0.15);
+  --color-warning:        #f39c12;
+  --color-warning-bg:     rgba(243, 156, 18, 0.15);
+
+  /* Neutrals */
+  --color-text:           #e0e0e0;
+  --color-text-dark:      #f0f0f0;
+  --color-text-muted:     #999;
+  --color-text-faint:     #666;
+  --color-label:          #888;
+
+  /* Backgrounds */
+  --color-bg:             #0f111a;
+  --color-surface:        #1a1d2e;
+  --color-surface-alt:    #1e2235;
+  --color-surface-hover:  #252a3a;
+
+  /* Borders */
+  --color-border:         #2a2f42;
+  --color-border-light:   #222639;
+  --color-border-input:   #3a3f55;
+
+  /* Sidebar */
+  --sidebar-bg:           #141625;
+  --sidebar-text:         #e0e0e0;
+  --sidebar-muted:        #8890a0;
+
+  /* Shadows */
+  --shadow-sm:            0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md:            0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-card:          0 2px 6px rgba(0, 0, 0, 0.2);
+
+  /* Border Radius */
+  --radius-sm:            4px;
+  --radius-md:            6px;
+  --radius-lg:            8px;
+
+  /* Typography */
+  --font-size-xs:         11px;
+  --font-size-sm:         12px;
+  --font-size-base:       14px;
+  --font-size-md:         15px;
+  --font-size-lg:         18px;
+  --font-size-xl:         24px;
+  --font-size-2xl:        28px;
+  --font-size-3xl:        32px;
+
+  /* Spacing */
+  --space-xs:             4px;
+  --space-sm:             8px;
+  --space-md:             12px;
+  --space-lg:             16px;
+  --space-xl:             20px;
+  --space-2xl:            24px;
+  --space-3xl:            32px;
+}
+
+/* ══════════════════════════════════════════
+   Reset & Base
+   ══════════════════════════════════════════ */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100vh;
+  width: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* ══════════════════════════════════════════
+   Scrollbar
+   ══════════════════════════════════════════ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1d2e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3a3f55;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4a5070;
+}
+
+/* ══════════════════════════════════════════
+   Page Layout Utilities
+   ══════════════════════════════════════════ */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xl);
+}
+
+/* Standard page heading block */
+.page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.page-header h1 {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  color: var(--color-text-dark);
+  margin: 0;
+}
+
+.page-header p {
+  font-size: var(--font-size-base);
+  color: var(--color-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ══════════════════════════════════════════
+   Global Button Styles
+   ══════════════════════════════════════════ */
+.btn {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--color-primary, #5b9bd5);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-dark, #4a8bc2);
+  box-shadow: 0 2px 6px rgba(91, 155, 213, 0.3);
+}
+
+.btn-secondary {
+  background: var(--color-surface-alt, #1e2235);
+  color: var(--color-text, #e0e0e0);
+  border: 1px solid var(--color-border, #2a2f42);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-surface-hover, #252a3a);
+  border-color: var(--color-primary, #5b9bd5);
+}
+
+.btn-danger {
+  background: var(--color-danger, #e74c3c);
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #d63a2d;
+}
+
+.btn-success {
+  background: var(--color-success, #2ecc71);
+  color: #fff;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #27ae60;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.btn-lg {
+  padding: 12px 24px;
+  font-size: 16px;
+}
+
+.page-section {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2xl);
+  box-shadow: var(--shadow-md);
+}
+
+.page-section h3 {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-text-dark);
+  margin: 0 0 var(--space-lg) 0;
+}
+
+/* Section title (small caps label style) */
+.section-title {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--color-label);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 var(--space-md) 0;
+}
+
+/* ══════════════════════════════════════════
+   Global Button System
+   ══════════════════════════════════════════ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-sm {
+  padding: 5px 12px;
+  font-size: var(--font-size-sm);
+}
+
+.btn-lg {
+  padding: 10px 22px;
+  font-size: var(--font-size-md);
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+  box-shadow: 0 2px 8px rgba(52, 152, 219, 0.35);
+}
+
+.btn-secondary {
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  border-color: var(--color-primary);
+}
+
+.btn-danger {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #a00;
+}
+
+.btn-ghost {
+  background: none;
+  color: var(--color-text-dark);
+  border: 1px solid var(--color-border);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
+/* ══════════════════════════════════════════
+   Global Badge System
+   ══════════════════════════════════════════ */
+.badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 10px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.badge-staff {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.badge-primary {
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
+}
+
+.badge-success {
+  background: rgba(39, 174, 96, 0.12);
+  color: var(--color-success);
+}
+
+/* ══════════════════════════════════════════
+   State Helpers
+   ══════════════════════════════════════════ */
+.text-muted {
+  color: var(--color-text-muted);
+}
+
+.text-faint {
+  color: var(--color-text-faint);
+}
+
+/* Generic loading / error card */
+.state-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 64px 24px;
+  text-align: center;
+  font-size: var(--font-size-md);
+  color: var(--color-text-muted);
+}
+
+.state-card.error {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-left: 4px solid var(--color-danger);
+}
+
+/* ══════════════════════════════════════════
+   Legacy App.css tokens (kept for backward compat)
+   ══════════════════════════════════════════ */
+.page h1 {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  color: var(--color-text-dark);
+  margin: 0 0 20px 0;
+}
+
+.page h2 {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  color: var(--color-text-dark);
+  margin: 0 0 16px 0;
+}
+
+.page p {
+  color: #666;
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+}
+
+/* Dashboard */
+.dashboard-header {
+  margin-bottom: 24px;
+}
+
+.dashboard-header h1 {
+  font-size: var(--font-size-3xl);
+  font-weight: 700;
+  color: var(--color-text-dark);
+  margin: 0 0 8px 0;
+}
+
+.dashboard-header p {
+  color: #666;
+  font-size: 16px;
+  margin: 0;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.dashboard-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2xl);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.dashboard-card h3 {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-text-dark);
+  margin: 0;
+}
+
+.dashboard-card p {
+  color: #666;
+  font-size: var(--font-size-base);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.dashboard-card .btn {
+  align-self: flex-start;
+}

@@ -1,0 +1,13 @@
+2025.03.01 20:00:00 Log        -  VRChat started.
+2025.03.01 20:01:00 Log        -  [Behaviour] Entering Room: Test Event World
+2025.03.01 20:01:01 Log        -  [Behaviour] Joining wrld_12345678-1234-1234-1234-123456789012:99999~region(us)~nonce(abc)
+2025.03.01 20:02:00 Log        -  [NetworkManager] OnPlayerJoined Alice (usr_aaaaaaaa-1111-2222-3333-444444444444)
+2025.03.01 20:05:00 Log        -  [NetworkManager] OnPlayerJoined Bob (usr_bbbbbbbb-1111-2222-3333-444444444444)
+2025.03.01 20:10:00 Log        -  [NetworkManager] OnPlayerJoined Charlie (usr_cccccccc-1111-2222-3333-444444444444)
+2025.03.01 20:15:00 Log        -  [NetworkManager] OnPlayerLeft Alice (usr_aaaaaaaa-1111-2222-3333-444444444444)
+2025.03.01 20:20:00 Log        -  [NetworkManager] OnPlayerJoined Alice (usr_aaaaaaaa-1111-2222-3333-444444444444)
+2025.03.01 20:25:00 Log        -  [NetworkManager] OnPlayerLeft Bob (usr_bbbbbbbb-1111-2222-3333-444444444444)
+2025.03.01 20:30:00 Log        -  [NetworkManager] OnPlayerLeft Charlie (usr_cccccccc-1111-2222-3333-444444444444)
+2025.03.01 20:35:00 Log        -  [NetworkManager] OnPlayerLeft Alice (usr_aaaaaaaa-1111-2222-3333-444444444444)
+2025.03.01 20:35:01 Log        -  [NetworkManager] OnPlayerJoined Dave
+2025.03.01 20:45:00 Log        -  [NetworkManager] OnPlayerLeft Dave
