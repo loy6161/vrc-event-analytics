@@ -48,19 +48,25 @@ router.get('/performers', async (_req, res) => {
   }
 })
 
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
     const db = getDatabase()
     const users = await getUsers()
 
+    const { from, to } = req.query
+    const dateFrom = typeof from === 'string' && from ? from : null
+    const dateTo = typeof to === 'string' && to ? to : null
+
     const usersWithStats = await Promise.all(users.map(async user => {
-      const joinsResult = await db.execute({
-        sql: `SELECT pe.timestamp, pe.event_id
-              FROM player_events pe
-              WHERE pe.display_name = ? AND pe.event_type = 'join'
-              ORDER BY pe.timestamp ASC`,
-        args: [user.display_name],
-      })
+      let joinSql = `SELECT pe.timestamp, pe.event_id
+                     FROM player_events pe
+                     WHERE pe.display_name = ? AND pe.event_type = 'join'`
+      const joinArgs: any[] = [user.display_name]
+      if (dateFrom) { joinSql += ` AND pe.timestamp >= ?`; joinArgs.push(dateFrom) }
+      if (dateTo)   { joinSql += ` AND pe.timestamp <= ?`; joinArgs.push(dateTo + 'T23:59:59') }
+      joinSql += ` ORDER BY pe.timestamp ASC`
+
+      const joinsResult = await db.execute({ sql: joinSql, args: joinArgs })
       const joins = joinsResult.rows as any[]
 
       // ユニークイベント数を参加回数とする（再入室は1回とカウント）
