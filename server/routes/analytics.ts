@@ -546,20 +546,59 @@ async function computeInsights(): Promise<EventInsights> {
   const events = eventsResult.rows as any[]
   if (events.length === 0) return emptyInsights()
 
-  const eventAttendance: Array<{ event_id: number; event_name: string; date: string; attendees: Set<string>; total_joins: number }> = []
+  const eventAttendance: Array<{
+    event_id: number; event_name: string; date: string
+    attendees: Set<string>; total_joins: number
+    peak_concurrent: number; avg_stay_duration: number
+  }> = []
 
   for (const ev of events) {
-    const joinsResult = await db.execute({
-      sql: `SELECT COALESCE(user_id, display_name) as key FROM player_events
-            WHERE event_id = ? AND event_type = 'join'
-              AND display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)`,
+    const rawResult = await db.execute({
+      sql: `SELECT event_type, timestamp, COALESCE(user_id, display_name) as key
+            FROM player_events
+            WHERE event_id = ?
+              AND display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)
+            ORDER BY timestamp ASC`,
       args: [ev.id],
     })
-    const joins = joinsResult.rows as any[]
-    eventAttendance.push({ event_id: ev.id, event_name: ev.name, date: ev.date, attendees: new Set(joins.map(j => j.key)), total_joins: joins.length })
-  }
+    const raw = rawResult.rows as any[]
+    const joins = raw.filter(r => r.event_type === 'join')
+    const attendees = new Set<string>(joins.map(r => r.key))
+    const total_joins = joins.length
 
-  const attendance_history = eventAttendance.map(ea => ({ event_id: ea.event_id, event_name: ea.event_name, date: ea.date, unique_attendees: ea.attendees.size, total_joins: ea.total_joins }))
+    // peak concurrent
+    let concurrent = 0, peak_concurrent = 0
+    for (const r of raw) {
+      concurrent += r.event_type === 'join' ? 1 : -1
+      if (concurrent < 0) concurrent = 0
+      if (concurrent > peak_concurrent) peak_concurrent = concurrent
+    }
+
+    // avg stay duration (minutes)
+    const lastMs = raw.length > 0 ? new Date(raw[raw.length - 1].timestamp).getTime() : 0
+    const pending = new Map<string, number[]>()
+    const durations: number[] = []
+    for (const r of raw) {
+      if (r.event_type === 'join') {
+        let q = pending.get(r.key); if (!q) { q = []; pending.set(r.key, q) }
+        q.push(new Date(r.timestamp).getTime())
+      } else {
+        const q = pending.get(r.key)
+        if (q && q.length > 0) {
+          const ms = new Date(r.timestamp).getTime() - q.shift()!
+          if (ms > 0 && ms < 720 * 60_000) durations.push(ms / 60_000)
+          if (q.length === 0) pending.delete(r.key)
+        }
+      }
+    }
+    for (const [, q] of pending) for (const joinMs of q) {
+      const ms = lastMs - joinMs
+      if (ms > 0 && ms < 720 * 60_000) durations.push(ms / 60_000)
+    }
+    const avg_stay_duration = durations.length > 0 ? round1(durations.reduce((s, d) => s + d, 0) / durations.length) : 0
+
+    eventAttendance.push({ event_id: ev.id, event_name: ev.name, date: ev.date, attendees, total_joins, peak_concurrent, avg_stay_duration })
+  }
 
   let growth_rate = 0, growth_trend: 'growing' | 'stable' | 'declining' = 'stable'
   if (eventAttendance.length >= 3) {
@@ -595,6 +634,20 @@ async function computeInsights(): Promise<EventInsights> {
   }
 
   const overall_retention_rate = totalRetentionDenom > 0 ? round3(totalReturning / totalRetentionDenom) : 0
+
+  // Build attendance_history with merged retention data
+  const attendance_history = eventAttendance.map((ea, i) => {
+    const ret = retention_by_event[i]
+    return {
+      event_id: ea.event_id, event_name: ea.event_name, date: ea.date,
+      unique_attendees: ea.attendees.size, total_joins: ea.total_joins,
+      peak_concurrent: ea.peak_concurrent, avg_stay_duration: ea.avg_stay_duration,
+      new_attendees: ret?.new_attendees ?? ea.attendees.size,
+      returning_attendees: ret?.returning_from_prev ?? 0,
+      retention_rate: ret?.retention_rate ?? 0,
+    }
+  })
+
   const totalEvents = eventAttendance.length
   const userEventCount = new Map<string, number>()
   const userLastEventIdx = new Map<string, number>()
@@ -647,6 +700,7 @@ async function computeInsights(): Promise<EventInsights> {
 function emptyInsights(): EventInsights {
   return { health_score: 0, health_grade: 'D', health_components: { growth: 0, retention: 0, engagement: 0, community: 0 }, growth_trend: 'stable', growth_rate: 0, attendance_history: [], overall_retention_rate: 0, retention_by_event: [], community: { core_count: 0, regular_count: 0, casual_count: 0, onetime_count: 0, churned_count: 0, total_known: 0 }, recommendations: [] }
 }
+// Note: attendance_history items now include peak_concurrent, avg_stay_duration, new_attendees, returning_attendees, retention_rate
 
 router.get('/events/:id/detailed', async (req: Request, res: Response) => {
   const id = parseId(req.params.id)
