@@ -253,6 +253,16 @@ export function UserTable({ onSelectUser }: UserTableProps) {
 
   const allTags = Array.from(new Set(allUsers.flatMap(u => u.tags || [])))
 
+  // データの日付範囲（カレンダーの min/max に使う）
+  const dateRange = (() => {
+    const dates = allUsers
+      .flatMap(u => [u.first_attendance, u.last_attendance])
+      .filter((d): d is string => !!d)
+      .map(d => d.slice(0, 10))
+      .sort()
+    return { min: dates[0] ?? '', max: dates[dates.length - 1] ?? '' }
+  })()
+
   const toggleSelect = (userId: number) => {
     const s = new Set(selected)
     if (s.has(userId)) s.delete(userId)
@@ -472,6 +482,8 @@ export function UserTable({ onSelectUser }: UserTableProps) {
                 type="date"
                 className="filter-input"
                 value={periodStart}
+                min={dateRange.min}
+                max={periodEnd || dateRange.max}
                 onChange={e => setPeriodStart(e.target.value)}
               />
               <span className="filter-range-sep">〜</span>
@@ -479,6 +491,8 @@ export function UserTable({ onSelectUser }: UserTableProps) {
                 type="date"
                 className="filter-input"
                 value={periodEnd}
+                min={periodStart || dateRange.min}
+                max={dateRange.max}
                 onChange={e => setPeriodEnd(e.target.value)}
               />
             </div>

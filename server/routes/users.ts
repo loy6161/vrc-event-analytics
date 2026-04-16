@@ -63,14 +63,17 @@ router.get('/', async (_req, res) => {
       })
       const joins = joinsResult.rows as any[]
 
-      const attendance_count = joins.length
+      // ユニークイベント数を参加回数とする（再入室は1回とカウント）
+      const attendance_count = new Set(
+        joins.filter(j => j.event_id != null && j.event_id !== 0).map(j => j.event_id)
+      ).size
       let total_stay_duration = 0
       let first_attendance: string | undefined
       let last_attendance: string | undefined
 
-      if (attendance_count > 0) {
+      if (joins.length > 0) {
         first_attendance = joins[0].timestamp
-        last_attendance = joins[attendance_count - 1].timestamp
+        last_attendance = joins[joins.length - 1].timestamp
 
         for (const join of joins) {
           const leaveResult = await db.execute({
@@ -94,7 +97,7 @@ router.get('/', async (_req, res) => {
         ...user,
         attendance_count,
         total_stay_duration: Math.round(total_stay_duration),
-        avg_stay_duration: attendance_count > 0 ? Math.round((total_stay_duration / attendance_count) * 10) / 10 : 0,
+        avg_stay_duration: attendance_count > 0 ? Math.round((total_stay_duration / attendance_count) * 10) / 10 : 0, // per event
         first_attendance,
         last_attendance,
       }
