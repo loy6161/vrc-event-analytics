@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { PeriodStats } from '../types/index.js'
+import { dataCache } from '../utils/dataCache.js'
 import '../styles/Dashboard.css'
 
 // ─────────────────────────────────────────────
@@ -111,54 +112,61 @@ function daysSince(dateStr: string | undefined): number | null {
   return Math.round((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
 }
 
+function computeAlerts(users: any[]): PrepCitizenAlert[] {
+  const alerts: PrepCitizenAlert[] = []
+  for (const user of users) {
+    if (!Array.isArray(user.tags) || !user.tags.includes('準市民')) continue
+    const days = daysSince(user.last_attendance)
+    if (days !== null && days >= 90) {
+      alerts.push({ display_name: user.display_name, type: 'expired', days_since_last: days })
+    } else if (user.attendance_count >= 3 && user.total_stay_duration >= 360) {
+      alerts.push({
+        display_name: user.display_name,
+        type: 'promotion',
+        attendance_count: user.attendance_count,
+        total_stay_hours: Math.round((user.total_stay_duration / 60) * 10) / 10,
+      })
+    }
+  }
+  return alerts
+}
+
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [prepAlerts, setPrepAlerts] = useState<PrepCitizenAlert[]>([])
 
-  useEffect(() => {
-    fetch('/api/analytics/dashboard')
-      .then(r => r.json())
-      .then(res => {
-        if (res.success) setData(res.data)
-        else setError(res.error ?? 'Failed to load dashboard')
-      })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [])
+  const loadDashboard = async (force = false) => {
+    const cached = dataCache.get<DashboardData>('dashboard')
+    if (cached && !force) { setData(cached); setLoading(false); return }
+    try {
+      const res = await fetch('/api/analytics/dashboard').then(r => r.json())
+      if (res.success) { dataCache.set('dashboard', res.data); setData(res.data) }
+      else setError(res.error ?? 'Failed to load dashboard')
+    } catch (err: any) { setError(err.message) }
+    finally { setLoading(false); setRefreshing(false) }
+  }
 
-  useEffect(() => {
-    fetch('/api/users')
-      .then(r => r.json())
-      .then(res => {
-        if (!res.success) return
-        const alerts: PrepCitizenAlert[] = []
-        for (const user of res.data) {
-          if (!Array.isArray(user.tags) || !user.tags.includes('準市民')) continue
-          const days = daysSince(user.last_attendance)
-          // 市民権失効: 最終参加から90日以上経過
-          if (days !== null && days >= 90) {
-            alerts.push({
-              display_name: user.display_name,
-              type: 'expired',
-              days_since_last: days,
-            })
-          }
-          // 昇格: 参加3回以上 AND 合計滞在360分（6時間）以上
-          else if (user.attendance_count >= 3 && user.total_stay_duration >= 360) {
-            alerts.push({
-              display_name: user.display_name,
-              type: 'promotion',
-              attendance_count: user.attendance_count,
-              total_stay_hours: Math.round((user.total_stay_duration / 60) * 10) / 10,
-            })
-          }
-        }
-        setPrepAlerts(alerts)
-      })
-      .catch(() => {})
-  }, [])
+  const loadAlerts = async (force = false) => {
+    const cached = dataCache.get<any[]>('users-all')
+    if (cached && !force) { setPrepAlerts(computeAlerts(cached)); return }
+    try {
+      const res = await fetch('/api/users').then(r => r.json())
+      if (res.success) { dataCache.set('users-all', res.data); setPrepAlerts(computeAlerts(res.data)) }
+    } catch { /* non-critical */ }
+  }
+
+  const refresh = () => {
+    dataCache.delete('dashboard')
+    dataCache.delete('users-all')
+    setRefreshing(true)
+    loadDashboard(true)
+    loadAlerts(true)
+  }
+
+  useEffect(() => { loadDashboard(); loadAlerts() }, [])
 
   if (loading) {
     return (
@@ -231,8 +239,15 @@ export function Dashboard() {
   return (
     <div className="dashboard-page">
       <div className="dash-page-header">
-        <h1>ダッシュボード</h1>
-        <p>全イベントの参加者数・統計サマリー</p>
+        <div className="dash-header-row">
+          <div>
+            <h1>ダッシュボード</h1>
+            <p>全イベントの参加者数・統計サマリー</p>
+          </div>
+          <button className="btn-refresh" onClick={refresh} disabled={refreshing}>
+            ↻ {refreshing ? '更新中...' : '更新'}
+          </button>
+        </div>
       </div>
 
       {/* All-time KPIs */}

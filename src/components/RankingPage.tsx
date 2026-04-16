@@ -12,6 +12,7 @@ import {
 import { createColumnHelper } from '@tanstack/react-table'
 import { DataTable } from './DataTable'
 import type { UserRankingItem, PeriodStats } from '../types/index.js'
+import { dataCache } from '../utils/dataCache.js'
 import '../styles/RankingPage.css'
 
 // ─────────────────────────────────────────────
@@ -142,40 +143,64 @@ export function RankingPage() {
 
   // Load available years from periods endpoint
   useEffect(() => {
+    const cached = dataCache.get<PeriodStats[]>('periods')
+    if (cached) {
+      const years = [...new Set(cached.map(p => p.period.slice(0, 4)))].sort().reverse()
+      setAvailableYears(years as string[])
+      return
+    }
     fetch('/api/analytics/periods')
       .then(r => r.json())
       .then(res => {
         if (res.success) {
+          dataCache.set('periods', res.data)
           const years = [
             ...new Set((res.data as PeriodStats[]).map(p => p.period.slice(0, 4))),
           ].sort().reverse()
           setAvailableYears(years as string[])
         }
       })
-      .catch(() => {}) // non-critical
+      .catch(() => {})
   }, [])
 
   // Fetch rankings whenever sort or period changes
   useEffect(() => {
-    setLoading(true)
-    setError(null)
-
     const params = new URLSearchParams()
     params.set('sort', sortBy)
     if (selectedYear !== 'all') params.set('period', selectedYear)
+    const cacheKey = `rankings:${params}`
 
+    const cached = dataCache.get<UserRankingItem[]>(cacheKey)
+    if (cached) { setRankings(cached); setLoading(false); return }
+
+    setLoading(true)
+    setError(null)
     fetch(`/api/analytics/rankings?${params}`)
       .then(r => r.json())
       .then(res => {
-        if (res.success) {
-          setRankings(res.data)
-        } else {
-          setError(res.error ?? 'Failed to load rankings')
-        }
+        if (res.success) { dataCache.set(cacheKey, res.data); setRankings(res.data) }
+        else setError(res.error ?? 'Failed to load rankings')
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
   }, [sortBy, selectedYear])
+
+  const refresh = () => {
+    dataCache.deletePrefix('rankings:')
+    const params = new URLSearchParams()
+    params.set('sort', sortBy)
+    if (selectedYear !== 'all') params.set('period', selectedYear)
+    setLoading(true)
+    setError(null)
+    fetch(`/api/analytics/rankings?${params}`)
+      .then(r => r.json())
+      .then(res => {
+        if (res.success) { dataCache.set(`rankings:${params}`, res.data); setRankings(res.data) }
+        else setError(res.error ?? 'Failed to load rankings')
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false))
+  }
 
   const chartData = useMemo(
     () =>
@@ -197,6 +222,9 @@ export function RankingPage() {
       <div className="ranking-header">
         <div className="ranking-title-row">
           <h1>ランキング</h1>
+          <button className="btn-refresh" onClick={refresh} disabled={loading}>
+            ↻ 更新
+          </button>
         </div>
         <p>参加回数・滞在時間でのリーダーボード。名前をクリックするとユーザー詳細を表示します。</p>
       </div>

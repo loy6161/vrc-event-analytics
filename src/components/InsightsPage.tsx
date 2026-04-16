@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { RetentionChart } from './charts/RetentionChart'
 import { AttendanceTrendChart } from './charts/AttendanceTrendChart'
 import type { EventInsights } from '../types/index.js'
+import { dataCache } from '../utils/dataCache.js'
 import '../styles/Charts.css'
 import '../styles/InsightsPage.css'
 
@@ -191,18 +192,23 @@ function RecommendationCard({ rec }: { rec: EventInsights['recommendations'][num
 export function InsightsPage() {
   const [insights, setInsights] = useState<EventInsights | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetch('/api/analytics/insights')
-      .then(r => r.json())
-      .then(res => {
-        if (res.success) setInsights(res.data)
-        else setError(res.error ?? 'Failed to load insights')
-      })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [])
+  const load = async (force = false) => {
+    const cached = dataCache.get<EventInsights>('insights')
+    if (cached && !force) { setInsights(cached); setLoading(false); return }
+    try {
+      const res = await fetch('/api/analytics/insights').then(r => r.json())
+      if (res.success) { dataCache.set('insights', res.data); setInsights(res.data) }
+      else setError(res.error ?? 'Failed to load insights')
+    } catch (err: any) { setError(err.message) }
+    finally { setLoading(false); setRefreshing(false) }
+  }
+
+  const refresh = () => { dataCache.delete('insights'); setRefreshing(true); load(true) }
+
+  useEffect(() => { load() }, [])
 
   if (loading) {
     return (
@@ -241,14 +247,19 @@ export function InsightsPage() {
           <h1>インサイト</h1>
           <p>データに基づくイベント改善アドバイス</p>
         </div>
-        <div className="insights-trend-badge">
-          <span className="trend-icon">{trendIcon(insights.growth_trend)}</span>
-          <span className="trend-label">{trendLabel(insights.growth_trend)}</span>
-          {insights.growth_rate !== 0 && (
-            <span className={`trend-rate ${insights.growth_rate > 0 ? 'positive' : 'negative'}`}>
-              {insights.growth_rate > 0 ? '+' : ''}{insights.growth_rate.toFixed(1)}%
-            </span>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="insights-trend-badge">
+            <span className="trend-icon">{trendIcon(insights.growth_trend)}</span>
+            <span className="trend-label">{trendLabel(insights.growth_trend)}</span>
+            {insights.growth_rate !== 0 && (
+              <span className={`trend-rate ${insights.growth_rate > 0 ? 'positive' : 'negative'}`}>
+                {insights.growth_rate > 0 ? '+' : ''}{insights.growth_rate.toFixed(1)}%
+              </span>
+            )}
+          </div>
+          <button className="btn-refresh" onClick={refresh} disabled={refreshing}>
+            ↻ {refreshing ? '更新中...' : '更新'}
+          </button>
         </div>
       </div>
 
