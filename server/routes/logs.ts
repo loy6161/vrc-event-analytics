@@ -8,7 +8,9 @@ import {
   segmentIntoSessions,
   getDefaultLogDirectory,
   listLogFiles,
+  logicalDate,
   type ParsedPlayerEvent,
+  type WorldSession,
 } from '../services/log-parser.js'
 import {
   createEvent,
@@ -131,6 +133,11 @@ router.post(
     force = req.body?.force ?? false
   }
 
+  // 深夜の区切り時刻（既定: 翌朝6時まで前日のイベント扱い）。0〜12時で指定可
+  const cutoffRaw = isTextUpload ? req.query.cutoffHour : req.body?.cutoffHour
+  let cutoffHour = cutoffRaw != null ? parseInt(String(cutoffRaw), 10) : 6
+  if (isNaN(cutoffHour) || cutoffHour < 0 || cutoffHour > 12) cutoffHour = 6
+
   // ── Validate inputs ──────────────────────────────────────────
   let parsed
   try {
@@ -212,42 +219,52 @@ router.post(
       totalInserted = await insertPlayerEventsBatch(insertInputs)
     }
   } else {
-    // ── No event specified: auto-create one event per session ────
+    // ── No event specified: 論理的な「1日」ごとに1イベント自動作成 ──
+    // ライブ→打ち上げ→深夜のように日付をまたぐ滞在も、cutoffHour(既定6時)までは
+    // 同じ日のイベントとしてまとめる。途中でワールドを移動しても1日1イベント。
+    const byDay = new Map<string, WorldSession[]>()
     for (const session of allSessions) {
       if (session.playerEvents.length === 0) continue
+      const day = logicalDate(session.startTime, cutoffHour)
+      if (!byDay.has(day)) byDay.set(day, [])
+      byDay.get(day)!.push(session)
+    }
 
-      // Extract date from session start time (ISO format)
-      const sessionDate = session.startTime.slice(0, 10) // YYYY-MM-DD
-      const startTime = session.startTime.slice(11, 16)  // HH:MM
-      const endTime = session.endTime.slice(11, 16)
+    for (const [day, sessions] of byDay) {
+      const dayPlayerEvents = sessions.flatMap(s => s.playerEvents)
+      // 代表ワールド = 最初にワールド名を持つセッション
+      const primary = sessions.find(s => s.worldName) ?? sessions[0]
+      const worldCount = new Set(sessions.map(s => s.worldId).filter(Boolean)).size
+      const startTime = sessions[0].startTime.slice(11, 16)             // その日の最初の開始
+      const endTime = sessions[sessions.length - 1].endTime.slice(11, 16) // 最後の終了
 
-      // Generate event name
-      const eventName = session.worldName
-        ? `${session.worldName} (${sessionDate})`
-        : `Session ${sessionDate} ${startTime}`
+      const eventName = primary.worldName
+        ? (worldCount > 1
+            ? `${primary.worldName} 他${worldCount - 1}ワールド (${day})`
+            : `${primary.worldName} (${day})`)
+        : `イベント ${day}`
 
-      // Create event
       const newEvent = await createEvent({
         name: eventName,
-        date: sessionDate,
+        date: day,
         start_time: startTime,
         end_time: endTime,
-        world_id: session.worldId,
-        world_name: session.worldName,
-        instance_id: session.instanceId,
-        region: session.region,
-        access_type: session.accessType,
+        world_id: primary.worldId,
+        world_name: primary.worldName,
+        instance_id: primary.instanceId,
+        region: primary.region,
+        access_type: primary.accessType,
       })
 
       createdEvents.push({
         id: newEvent.id,
         name: newEvent.name,
         date: newEvent.date,
-        worldName: session.worldName,
+        worldName: primary.worldName,
       })
 
-      // Insert player events linked to this new event
-      const insertInputs: InsertPlayerEventInput[] = session.playerEvents.map(pe => ({
+      // その日の全セッションのプレイヤーイベントを1イベントに紐付け
+      const insertInputs: InsertPlayerEventInput[] = dayPlayerEvents.map(pe => ({
         event_id: newEvent.id,
         user_id: pe.userId,
         display_name: pe.displayName,

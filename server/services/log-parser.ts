@@ -103,6 +103,29 @@ function parseTimestamp(raw: string): string {
   return raw.replace(/\./g, '-').replace(' ', 'T')
 }
 
+/**
+ * 「論理的な1日」を返す。深夜まで続くイベント（ライブ→打ち上げ）を
+ * 翌朝 cutoffHour 時までは前日のイベントとして扱う。
+ *
+ * 仕組み: タイムスタンプから cutoffHour 時間ぶん引いて日付を取る。
+ *  - cutoffHour=6 のとき、[当日06:00, 翌日06:00) は当日扱い
+ *  - 例: "2025-01-16T02:30" → 6h引く → 2025-01-15 → 前日(15日)のイベント
+ *  - 例: "2025-01-16T07:00" → 6h引く → 2025-01-16 → 当日(16日)
+ *
+ * ログのタイムスタンプはローカル時刻の素の文字列なので、
+ * UTCで壁時計演算してホストのTZ影響を排除する。
+ */
+export function logicalDate(isoLocal: string, cutoffHour = 6): string {
+  const [datePart, timePart = '00:00:00'] = isoLocal.split('T')
+  const [y, m, d] = datePart.split('-').map(Number)
+  const [hh = 0, mi = 0, se = 0] = timePart.split(':').map(Number)
+  const shifted = new Date(Date.UTC(y, m - 1, d, hh, mi, se) - cutoffHour * 3600_000)
+  const yy = shifted.getUTCFullYear()
+  const mo = String(shifted.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(shifted.getUTCDate()).padStart(2, '0')
+  return `${yy}-${mo}-${dd}`
+}
+
 // ──────────────────────────────────────────────
 // Instance string parser
 // ──────────────────────────────────────────────
