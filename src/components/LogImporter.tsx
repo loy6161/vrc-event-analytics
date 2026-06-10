@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { dataCache } from '../utils/dataCache.js'
 import '../styles/LogImporter.css'
 
 interface ImportedLog {
@@ -147,6 +148,8 @@ export function LogImporter() {
       }
     }
 
+    // 取込でイベント/ユーザー/集計が変わるので、一覧・分析ページのキャッシュを全破棄
+    dataCache.clear()
     await loadImportHistory()
     setIsImporting(false)
     setImportProgress(null)
@@ -187,6 +190,7 @@ export function LogImporter() {
       }
     }
     setSelectedIds(new Set())
+    dataCache.clear()
     await loadImportHistory()
     setIsBulkDeleting(false)
     setImportResults([{
@@ -204,6 +208,7 @@ export function LogImporter() {
       const res = await fetch(`/api/logs/${log.id}`, { method: 'DELETE' })
       const json = await res.json()
       if (json.success) {
+        dataCache.clear()
         await loadImportHistory()
         setImportResults([{
           fileName: log.file_name,
