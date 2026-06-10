@@ -1,8 +1,86 @@
 import { Router } from 'express'
 import { getDatabase } from '../db/schema.js'
-import { getUsers, updateUser, getUserByDisplayName } from '../db/queries.js'
+import { getUsers, updateUser, getUserByDisplayName, getCitizenshipTargetSeries } from '../db/queries.js'
 
 const router = Router()
+
+// ── 市民権アラート ──────────────────────────────────────────────────
+// 準市民の昇格候補・失効を判定する。判定に数える参加実績は「市民権対象シリーズ」
+// (series.citizenship_target=1) のイベントだけ。対象未設定なら全イベントで判定（後方互換）。
+// ステータス（準市民タグ）自体はイベント横断の概念なので、ページのシリーズ絞り込みには追従しない。
+router.get('/citizenship-alerts', async (_req, res) => {
+  try {
+    const db = getDatabase()
+    const targetSeries = await getCitizenshipTargetSeries()
+
+    // 判定対象イベントID集合（対象シリーズ未設定なら全イベント）
+    let targetEventIds: number[] | null = null
+    if (targetSeries.length > 0) {
+      const ph = targetSeries.map(() => '?').join(',')
+      const r = await db.execute({ sql: `SELECT id FROM events WHERE series IN (${ph})`, args: targetSeries })
+      targetEventIds = (r.rows as any[]).map(row => row.id as number)
+      if (targetEventIds.length === 0) {
+        res.json({ success: true, data: { alerts: [], target_series: targetSeries }, timestamp: new Date().toISOString() })
+        return
+      }
+    }
+
+    // 準市民タグを持つユーザーだけ対象
+    const users = await getUsers()
+    const semicitizens = users.filter(u => Array.isArray(u.tags) && u.tags.includes('準市民'))
+
+    const evClause = targetEventIds ? ` AND pe.event_id IN (${targetEventIds.map(() => '?').join(',')})` : ''
+    const evArgs = targetEventIds ?? []
+
+    const now = new Date(); now.setHours(0, 0, 0, 0)
+    const alerts: any[] = []
+
+    for (const user of semicitizens) {
+      const joinsResult = await db.execute({
+        sql: `SELECT pe.timestamp, pe.event_id FROM player_events pe
+              WHERE pe.display_name = ? AND pe.event_type = 'join'${evClause}
+              ORDER BY pe.timestamp ASC`,
+        args: [user.display_name, ...evArgs],
+      })
+      const joins = joinsResult.rows as any[]
+      if (joins.length === 0) continue
+
+      const attendance_count = new Set(joins.filter(j => j.event_id != null && j.event_id !== 0).map(j => j.event_id)).size
+      const last_attendance = joins[joins.length - 1].timestamp
+
+      let total_stay = 0
+      for (const join of joins) {
+        const leave = (await db.execute({
+          sql: `SELECT timestamp FROM player_events
+                WHERE display_name = ? AND event_id = ? AND event_type = 'leave' AND timestamp > ?
+                ORDER BY timestamp ASC LIMIT 1`,
+          args: [user.display_name, join.event_id, join.timestamp],
+        })).rows[0] as any
+        if (leave) {
+          const dur = (new Date(leave.timestamp).getTime() - new Date(join.timestamp).getTime()) / 60000
+          if (dur > 0 && dur <= 720) total_stay += dur
+        }
+      }
+
+      const last = new Date(last_attendance); last.setHours(0, 0, 0, 0)
+      const daysSinceLast = Math.round((now.getTime() - last.getTime()) / 86_400_000)
+
+      if (daysSinceLast >= 90) {
+        alerts.push({ display_name: user.display_name, type: 'expired', days_since_last: daysSinceLast })
+      } else if (attendance_count >= 3 && total_stay >= 360) {
+        alerts.push({
+          display_name: user.display_name, type: 'promotion',
+          attendance_count, total_stay_hours: Math.round((total_stay / 60) * 10) / 10,
+        })
+      }
+    }
+
+    res.json({ success: true, data: { alerts, target_series: targetSeries }, timestamp: new Date().toISOString() })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    res.status(500).json({ success: false, error: message, timestamp: new Date().toISOString() })
+  }
+})
 
 router.get('/performers', async (req, res) => {
   try {

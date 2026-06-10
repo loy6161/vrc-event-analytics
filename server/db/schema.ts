@@ -147,6 +147,17 @@ export async function initializeDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_chat_messages_stream ON youtube_chat_messages(stream_id);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_time ON youtube_chat_messages(published_at);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_type ON youtube_chat_messages(message_type);
+
+    -- シリーズ（clubVERSE / theALL / VERSARY...）のマスタ。
+    -- events.series は name を非正規化で保持し、こちらは色・市民権判定対象・並び順などのメタを持つ。
+    CREATE TABLE IF NOT EXISTS series (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      color TEXT,
+      citizenship_target INTEGER DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `)
 
   // ── Migrations for pre-existing databases ─────────────────────────
@@ -156,6 +167,14 @@ export async function initializeDatabase(): Promise<void> {
     await db.execute('ALTER TABLE events ADD COLUMN series TEXT')
   } catch { /* column already exists */ }
   await db.execute('CREATE INDEX IF NOT EXISTS idx_events_series ON events(series)')
+
+  // 既存イベントで使われているシリーズ名を series マスタへ取り込む（初回のみ・色などは未設定）。
+  // 既に行があれば無視されるので何度実行しても安全。
+  await db.execute(`
+    INSERT OR IGNORE INTO series (name)
+    SELECT DISTINCT series FROM events
+    WHERE series IS NOT NULL AND series != ''
+  `)
 }
 
 export function closeDatabase(): void {

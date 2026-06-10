@@ -838,4 +838,43 @@ router.get('/series-comparison', async (_req: Request, res: Response) => {
   } catch (err: any) { fail(res, err.message) }
 })
 
+// シリーズ別の参加者推移（重ね描きチャート用）。
+// 各シリーズについて、イベントごとの {date, event_name, unique_attendees} を時系列で返す。
+router.get('/series-trends', async (_req: Request, res: Response) => {
+  try {
+    const db = getDatabase()
+    const events = (await db.execute(
+      `SELECT id, name, date, series FROM events WHERE series IS NOT NULL AND series != '' ORDER BY date ASC`
+    )).rows as any[]
+    if (events.length === 0) return ok(res, [])
+
+    const joins = (await db.execute(
+      `SELECT pe.event_id, COALESCE(pe.user_id, pe.display_name) as key
+       FROM player_events pe
+       WHERE pe.event_type = 'join'
+         AND pe.display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)`
+    )).rows as any[]
+
+    const perEvent = new Map<number, Set<string>>()
+    for (const e of events) perEvent.set(e.id as number, new Set())
+    for (const j of joins) {
+      const s = perEvent.get(j.event_id as number)
+      if (s) s.add(String(j.key))
+    }
+
+    const bySeries = new Map<string, { date: string; event_name: string; unique_attendees: number }[]>()
+    for (const e of events) {
+      const s = e.series as string
+      if (!bySeries.has(s)) bySeries.set(s, [])
+      bySeries.get(s)!.push({
+        date: e.date as string,
+        event_name: e.name as string,
+        unique_attendees: perEvent.get(e.id as number)!.size,
+      })
+    }
+
+    ok(res, Array.from(bySeries.entries()).map(([series, points]) => ({ series, points })))
+  } catch (err: any) { fail(res, err.message) }
+})
+
 export default router

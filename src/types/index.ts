@@ -16,6 +16,23 @@ export interface Event {
   created_at: string // ISO 8601
 }
 
+// シリーズマスタ（/api/series）
+export interface SeriesMeta {
+  id: number
+  name: string
+  color?: string
+  citizenship_target: boolean
+  sort_order: number
+  event_count: number
+  last_date?: string
+}
+
+// シリーズ別の参加者推移（/api/analytics/series-trends）
+export interface SeriesTrend {
+  series: string
+  points: Array<{ date: string; event_name: string; unique_attendees: number }>
+}
+
 // シリーズ比較（/api/analytics/series-comparison）
 export interface SeriesComparison {
   series: string            // '' = 未分類

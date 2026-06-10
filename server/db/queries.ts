@@ -127,6 +127,7 @@ export async function createEvent(data: CreateEventInput): Promise<Event> {
       data.series || null, // 空文字は未分類(null)として保存
     ],
   })
+  if (data.series) await ensureSeries(data.series) // マスタ同期
   return (await getEventById(Number(result.lastInsertRowid)))!
 }
 
@@ -157,19 +158,105 @@ export async function updateEvent(id: number, data: Partial<CreateEventInput>): 
       id,
     ],
   })
+  if (data.series) await ensureSeries(data.series) // マスタ同期
   return getEventById(id)
 }
 
 // ── Series ─────────────────────────────────────
 
-// 登録済みシリーズ名の一覧（サジェスト・フィルタ用）。新しいイベントで使われた順。
-export async function getDistinctSeries(): Promise<string[]> {
+export interface SeriesMeta {
+  id: number
+  name: string
+  color?: string
+  citizenship_target: boolean
+  sort_order: number
+  event_count: number
+  last_date?: string
+}
+
+function mapSeries(row: any): SeriesMeta {
+  return {
+    id: row.id,
+    name: row.name,
+    color: row.color ?? undefined,
+    citizenship_target: row.citizenship_target === 1,
+    sort_order: row.sort_order ?? 0,
+    event_count: Number(row.event_count ?? 0),
+    last_date: row.last_date ?? undefined,
+  }
+}
+
+// シリーズマスタ一覧（メタ＋イベント数・最終開催日）。並びは sort_order → 最終開催日の新しい順。
+export async function getSeriesList(): Promise<SeriesMeta[]> {
   const result = await getDatabase().execute(
-    `SELECT series, MAX(date) as latest FROM events
-     WHERE series IS NOT NULL AND series != ''
-     GROUP BY series ORDER BY latest DESC`
+    `SELECT s.*,
+       (SELECT COUNT(*) FROM events e WHERE e.series = s.name) as event_count,
+       (SELECT MAX(e.date) FROM events e WHERE e.series = s.name) as last_date
+     FROM series s
+     ORDER BY s.sort_order ASC, last_date DESC, s.name ASC`
   )
-  return (result.rows as any[]).map(r => String(r.series))
+  return (result.rows as any[]).map(mapSeries)
+}
+
+// 登録済みシリーズ名の一覧（サジェスト・フィルタ用・後方互換）。
+export async function getDistinctSeries(): Promise<string[]> {
+  return (await getSeriesList()).map(s => s.name)
+}
+
+// 市民権の昇格・失効の判定対象シリーズ名。空配列なら全イベントで判定（後方互換）。
+export async function getCitizenshipTargetSeries(): Promise<string[]> {
+  const result = await getDatabase().execute(
+    `SELECT name FROM series WHERE citizenship_target = 1`
+  )
+  return (result.rows as any[]).map(r => String(r.name))
+}
+
+// シリーズ名をマスタへ登録（既存なら無視）。取込・一括設定・編集で新名が現れたら呼ぶ。
+export async function ensureSeries(name: string): Promise<void> {
+  const n = name.trim()
+  if (!n) return
+  await getDatabase().execute({
+    sql: `INSERT OR IGNORE INTO series (name) VALUES (?)`,
+    args: [n],
+  })
+}
+
+// シリーズのメタ更新（色・市民権対象・並び順）
+export async function updateSeriesMeta(
+  name: string,
+  patch: { color?: string | null; citizenship_target?: boolean; sort_order?: number },
+): Promise<void> {
+  const db = getDatabase()
+  const sets: string[] = []
+  const args: any[] = []
+  if ('color' in patch) { sets.push('color = ?'); args.push(patch.color ?? null) }
+  if ('citizenship_target' in patch) { sets.push('citizenship_target = ?'); args.push(patch.citizenship_target ? 1 : 0) }
+  if ('sort_order' in patch) { sets.push('sort_order = ?'); args.push(patch.sort_order ?? 0) }
+  if (sets.length === 0) return
+  args.push(name)
+  await db.execute({ sql: `UPDATE series SET ${sets.join(', ')} WHERE name = ?`, args })
+}
+
+// シリーズの改名。マスタ名と、全イベントの events.series を一括で書き換える（トランザクション）。
+export async function renameSeries(oldName: string, newName: string): Promise<void> {
+  const n = newName.trim()
+  if (!n || n === oldName) return
+  const db = getDatabase()
+  await db.batch([
+    { sql: `UPDATE OR IGNORE series SET name = ? WHERE name = ?`, args: [n, oldName] },
+    { sql: `UPDATE events SET series = ? WHERE series = ?`, args: [n, oldName] },
+    // 改名先が既存マスタと衝突した場合に備え、孤立した旧行を掃除
+    { sql: `DELETE FROM series WHERE name = ? AND NOT EXISTS (SELECT 1 FROM events WHERE series = ?)`, args: [oldName, oldName] },
+  ], 'write')
+}
+
+// シリーズの削除。マスタ行を消し、該当イベントは未分類(null)に戻す。
+export async function deleteSeriesMaster(name: string): Promise<void> {
+  const db = getDatabase()
+  await db.batch([
+    { sql: `UPDATE events SET series = NULL WHERE series = ?`, args: [name] },
+    { sql: `DELETE FROM series WHERE name = ?`, args: [name] },
+  ], 'write')
 }
 
 // シリーズの自動推定。
@@ -198,9 +285,10 @@ export async function inferSeries(worldId?: string, worldName?: string): Promise
   return null
 }
 
-// 複数イベントへシリーズを一括設定（null で解除）
+// 複数イベントへシリーズを一括設定（null で解除）。新名はマスタへも登録。
 export async function bulkSetSeries(eventIds: number[], series: string | null): Promise<number> {
   if (eventIds.length === 0) return 0
+  if (series) await ensureSeries(series)
   const placeholders = eventIds.map(() => '?').join(',')
   const result = await getDatabase().execute({
     sql: `UPDATE events SET series = ? WHERE id IN (${placeholders})`,

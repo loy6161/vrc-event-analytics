@@ -36,6 +36,32 @@ const NAV_GROUPS = [
   },
 ]
 
+function SeriesSwitcher() {
+  const { series, setSeries, seriesMeta, colorOf } = useSeries()
+  if (seriesMeta.length === 0) return null
+
+  const Item = ({ value, label, dot }: { value: string; label: string; dot?: string }) => (
+    <button
+      className={`series-switch-item${series === value ? ' active' : ''}`}
+      onClick={() => setSeries(value)}
+      title={label}
+    >
+      <span className="series-switch-dot" style={{ background: dot ?? 'transparent', border: dot ? 'none' : '1.5px solid currentColor' }} />
+      <span className="series-switch-label">{label}</span>
+    </button>
+  )
+
+  return (
+    <div className="series-switcher">
+      <div className="series-switch-caption">表示中のイベント</div>
+      <Item value="" label="全体（横断）" />
+      {seriesMeta.map(s => (
+        <Item key={s.name} value={s.name} label={s.name} dot={colorOf(s.name)} />
+      ))}
+    </div>
+  )
+}
+
 export function Sidebar() {
   const [currentPath, setCurrentPath] = useState(() =>
     window.location.hash.slice(1) || '/'
@@ -54,6 +80,7 @@ export function Sidebar() {
       <div className="sidebar-header">
         <h2>VRChat Analytics</h2>
       </div>
+      <SeriesSwitcher />
       <nav className="sidebar-nav">
         {NAV_GROUPS.map(group => (
           <div key={group.label} className="nav-group">
@@ -77,31 +104,23 @@ export function Sidebar() {
 }
 
 export function Header() {
-  const { series, setSeries, seriesList } = useSeries()
+  const { series, setSeries, colorOf } = useSeries()
   return (
     <header className="header">
       <div className="header-left">
         <h1 className="header-title">VRChat Event Analytics</h1>
+        {/* 現在のスコープを全ページで常時表示（モード見落とし対策）。×で全体に戻る */}
+        {series ? (
+          <span className="scope-chip" title="表示中のシリーズ。×で全体に戻る">
+            <span className="scope-chip-dot" style={{ background: colorOf(series) }} />
+            🎪 {series}
+            <button className="scope-chip-clear" onClick={() => setSeries('')} title="全体に戻す">×</button>
+          </span>
+        ) : (
+          <span className="scope-chip scope-chip-all">🌐 全イベント（横断）</span>
+        )}
       </div>
       <div className="header-right">
-        {/* グローバルのシリーズ絞り込み。全ページ（ダッシュボード/レポート/インサイト/
-            ランキング/ユーザー/出演者/イベント一覧）がこの選択で再計算される */}
-        {seriesList.length > 0 && (
-          <select
-            value={series}
-            onChange={e => setSeries(e.target.value)}
-            title="シリーズで全ページを絞り込み"
-            style={{
-              padding: '6px 10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-              border: series ? '1.5px solid #6366f1' : '1px solid rgba(128,128,128,0.3)',
-              background: series ? 'rgba(99,102,241,0.08)' : 'transparent',
-              color: 'inherit', cursor: 'pointer', maxWidth: 200,
-            }}
-          >
-            <option value="">🎪 全イベント</option>
-            {seriesList.map(s => <option key={s} value={s}>🎪 {s}</option>)}
-          </select>
-        )}
         <WatcherStatus />
         <a href="#/settings" className="btn-icon" title="設定">⚙️</a>
       </div>

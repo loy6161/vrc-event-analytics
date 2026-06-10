@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { PeriodStats } from '../types/index.js'
+import type { PeriodStats, SeriesComparison } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
 import { useSeries } from '../contexts/SeriesContext'
 import '../styles/Dashboard.css'
@@ -104,41 +104,15 @@ function MonthCard({ title, stats }: MonthCardProps) {
 // Main component
 // ─────────────────────────────────────────────
 
-function daysSince(dateStr: string | undefined): number | null {
-  if (!dateStr) return null
-  const now = new Date()
-  now.setHours(0, 0, 0, 0)
-  const d = new Date(dateStr)
-  d.setHours(0, 0, 0, 0)
-  return Math.round((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
-}
-
-function computeAlerts(users: any[]): PrepCitizenAlert[] {
-  const alerts: PrepCitizenAlert[] = []
-  for (const user of users) {
-    if (!Array.isArray(user.tags) || !user.tags.includes('準市民')) continue
-    const days = daysSince(user.last_attendance)
-    if (days !== null && days >= 90) {
-      alerts.push({ display_name: user.display_name, type: 'expired', days_since_last: days })
-    } else if (user.attendance_count >= 3 && user.total_stay_duration >= 360) {
-      alerts.push({
-        display_name: user.display_name,
-        type: 'promotion',
-        attendance_count: user.attendance_count,
-        total_stay_hours: Math.round((user.total_stay_duration / 60) * 10) / 10,
-      })
-    }
-  }
-  return alerts
-}
-
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [prepAlerts, setPrepAlerts] = useState<PrepCitizenAlert[]>([])
-  const { series } = useSeries()
+  const [citizenshipTargets, setCitizenshipTargets] = useState<string[]>([])
+  const [seriesCards, setSeriesCards] = useState<SeriesComparison[]>([])
+  const { series, setSeries, colorOf } = useSeries()
 
   const loadDashboard = async (force = false) => {
     const key = `dashboard:${series}`
@@ -153,25 +127,38 @@ export function Dashboard() {
     finally { setLoading(false); setRefreshing(false) }
   }
 
+  // 準市民アラートは「市民権の判定対象シリーズ」のみで計算（サーバー側）。ページのシリーズ絞り込みには追従しない。
   const loadAlerts = async (force = false) => {
-    // 準市民アラートはシリーズに関係なく全体で判定する
-    const cached = dataCache.get<any[]>('users-all:')
-    if (cached && !force) { setPrepAlerts(computeAlerts(cached)); return }
+    const cached = dataCache.get<{ alerts: PrepCitizenAlert[]; target_series: string[] }>('citizenship-alerts')
+    if (cached && !force) { setPrepAlerts(cached.alerts); setCitizenshipTargets(cached.target_series); return }
     try {
-      const res = await fetch('/api/users').then(r => r.json())
-      if (res.success) { dataCache.set('users-all:', res.data); setPrepAlerts(computeAlerts(res.data)) }
+      const res = await fetch('/api/users/citizenship-alerts').then(r => r.json())
+      if (res.success) { dataCache.set('citizenship-alerts', res.data); setPrepAlerts(res.data.alerts); setCitizenshipTargets(res.data.target_series) }
+    } catch { /* non-critical */ }
+  }
+
+  // 全体ビュー時のみ: シリーズ内訳カード（Fathom の All sites view 相当）
+  const loadSeriesCards = async (force = false) => {
+    if (series) { setSeriesCards([]); return }
+    const cached = dataCache.get<SeriesComparison[]>('series-comparison')
+    if (cached && !force) { setSeriesCards(cached); return }
+    try {
+      const res = await fetch('/api/analytics/series-comparison').then(r => r.json())
+      if (res.success) { dataCache.set('series-comparison', res.data); setSeriesCards(res.data) }
     } catch { /* non-critical */ }
   }
 
   const refresh = () => {
     dataCache.deletePrefix('dashboard:')
-    dataCache.delete('users-all:')
+    dataCache.delete('citizenship-alerts')
+    dataCache.delete('series-comparison')
     setRefreshing(true)
     loadDashboard(true)
     loadAlerts(true)
+    loadSeriesCards(true)
   }
 
-  useEffect(() => { setLoading(true); loadDashboard(); loadAlerts() }, [series])
+  useEffect(() => { setLoading(true); loadDashboard(); loadAlerts(); loadSeriesCards() }, [series])
 
   if (loading) {
     return (
@@ -246,8 +233,8 @@ export function Dashboard() {
       <div className="dash-page-header">
         <div className="dash-header-row">
           <div>
-            <h1>ダッシュボード</h1>
-            <p>全イベントの参加者数・統計サマリー</p>
+            <h1>ダッシュボード{series ? ` — 🎪 ${series}` : ''}</h1>
+            <p>{series ? `「${series}」の参加者数・統計サマリー` : '全イベントの参加者数・統計サマリー'}</p>
           </div>
           <button className="btn-refresh" onClick={refresh} disabled={refreshing}>
             ↻ {refreshing ? '更新中...' : '更新'}
@@ -265,6 +252,32 @@ export function Dashboard() {
           <KpiCard label="平均参加者/イベント" value={avg_per_event} />
         </div>
       </section>
+
+      {/* シリーズ内訳（全体ビューのみ・Fathom の All sites view 相当）。クリックでそのシリーズへ切替 */}
+      {!series && seriesCards.filter(c => c.series).length > 0 && (
+        <section className="dash-section">
+          <h2 className="dash-section-title">シリーズ別の概況</h2>
+          <div className="dash-series-grid">
+            {seriesCards.filter(c => c.series).map(c => (
+              <button key={c.series} className="dash-series-card" onClick={() => setSeries(c.series)} title={`${c.series} に絞り込む`}>
+                <div className="dash-series-card-head">
+                  <span className="dash-series-card-dot" style={{ background: colorOf(c.series) }} />
+                  <span className="dash-series-card-name">{c.series}</span>
+                </div>
+                <div className="dash-series-card-metrics">
+                  <span><strong>{c.event_count}</strong>回</span>
+                  <span>平均<strong>{c.avg_attendees}</strong>人</span>
+                  <span>最大<strong>{c.max_attendees}</strong>人</span>
+                </div>
+                <div className="dash-series-card-sub">
+                  ユニーク{c.unique_users}人・リピート{(c.repeat_rate * 100).toFixed(0)}%
+                  {c.last_date && <> ・直近 {c.last_date}</>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Month comparison */}
       {(current_month || previous_month) && (
@@ -312,10 +325,15 @@ export function Dashboard() {
         </section>
       )}
 
-      {/* 準市民アラート */}
+      {/* 準市民アラート（市民権の判定対象シリーズのみで計算・ページの絞り込みに非追従） */}
       {prepAlerts.length > 0 && (
         <section className="dash-section">
-          <h2 className="dash-section-title">準市民アラート</h2>
+          <h2 className="dash-section-title">
+            準市民アラート
+            <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.6, marginLeft: 10 }}>
+              判定対象: {citizenshipTargets.length > 0 ? citizenshipTargets.join('・') : '全イベント'}
+            </span>
+          </h2>
           <div className="dash-prep-alerts">
             {prepAlerts.map(alert => (
               <div
