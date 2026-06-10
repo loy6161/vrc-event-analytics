@@ -11,6 +11,8 @@ import {
   bulkSetSeries,
   getPlayerEventsByEventId,
   deletePlayerEventsByEventId,
+  deleteAvatarSwitchesByEventId,
+  getEventAvatarSummary,
 } from '../db/queries.js'
 
 const router = Router()
@@ -144,11 +146,22 @@ router.post('/recompute-timespans', async (_req: Request, res: Response) => {
   }
 })
 
+router.get('/:id/avatars', async (req: Request, res: Response) => {
+  const id = parseId(req.params.id)
+  if (id === null) return fail(res, 'Invalid event id', 400)
+  try {
+    const event = await getEventById(id)
+    if (!event) return fail(res, 'Event not found', 404)
+    ok(res, await getEventAvatarSummary(id))
+  } catch (err: any) { fail(res, err.message) }
+})
+
 router.delete('/:id', async (req: Request, res: Response) => {
   const id = parseId(req.params.id)
   if (id === null) return fail(res, 'Invalid event id', 400)
   try {
     await deletePlayerEventsByEventId(id)
+    await deleteAvatarSwitchesByEventId(id)
     const deleted = await deleteEvent(id)
     if (!deleted) return fail(res, 'Event not found', 404)
     ok(res, { id })

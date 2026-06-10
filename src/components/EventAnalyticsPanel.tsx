@@ -19,7 +19,7 @@ interface TimelinePoint {
   concurrent: number
 }
 
-type TabId = 'overview' | 'charts' | 'detailed' | 'attendees' | 'rankings'
+type TabId = 'overview' | 'charts' | 'detailed' | 'attendees' | 'avatars' | 'rankings'
 
 interface Tab {
   id: TabId
@@ -31,8 +31,18 @@ const TABS: Tab[] = [
   { id: 'charts',    label: '📈 グラフ' },
   { id: 'detailed',  label: '🔍 詳細分析' },
   { id: 'attendees', label: '👥 参加者' },
+  { id: 'avatars',   label: '🧍 アバター' },
   { id: 'rankings',  label: '🏆 ランキング' },
 ]
+
+interface AvatarUser {
+  display_name: string
+  switch_count: number
+  short_switch_count: number
+  current_avatar?: string
+  current_author?: string
+  avatars: Array<{ name: string; author?: string; count: number; last: string }>
+}
 
 // ──────────────────────────────────────────────────────────────────
 // Rankings table columns
@@ -271,6 +281,70 @@ function DetailedTab({ detailed }: { detailed: DetailedEventStats }) {
   )
 }
 
+function AvatarTab({ users }: { users: AvatarUser[] }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  if (users.length === 0) {
+    return (
+      <div className="avatar-tab">
+        <p style={{ opacity: 0.6, fontSize: 13, padding: 12 }}>
+          このイベントのログにアバター切替の記録がありませんでした。<br />
+          （アバター情報はVRChatログの「Switching … to avatar …」行から取得します。古いログや一部の環境では記録されないことがあります）
+        </p>
+      </div>
+    )
+  }
+  const toggle = (name: string) => setExpanded(prev => {
+    const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n
+  })
+  return (
+    <div className="avatar-tab">
+      <p className="section-subtitle" style={{ marginTop: 0 }}>
+        参加者が使ったアバターと作者。「短時間切替」は60秒以内の連続切替回数で、多いほどクラッシャー等の可能性（怪しさの目安）。
+      </p>
+      <div className="avatar-table">
+        <div className="avatar-row avatar-row-head">
+          <div className="av-user">User</div>
+          <div className="av-avatar">現在のアバター</div>
+          <div className="av-author">作者</div>
+          <div className="av-num">切替</div>
+          <div className="av-num">短時間</div>
+        </div>
+        {users.map(u => {
+          const open = expanded.has(u.display_name)
+          const sus = u.short_switch_count >= 3
+          return (
+            <div key={u.display_name} className={`avatar-group${open ? ' open' : ''}`}>
+              <div className="avatar-row" onClick={() => u.avatars.length > 1 && toggle(u.display_name)} style={{ cursor: u.avatars.length > 1 ? 'pointer' : 'default' }}>
+                <div className="av-user">
+                  {u.avatars.length > 1 && <span className="av-caret">{open ? '▾' : '▸'}</span>}
+                  {u.display_name}
+                </div>
+                <div className="av-avatar">{u.current_avatar ?? '—'}</div>
+                <div className="av-author">{u.current_author ?? '—'}</div>
+                <div className="av-num">{u.switch_count}</div>
+                <div className={`av-num${sus ? ' av-sus' : ''}`} title={sus ? '短時間での連続切替が多い（要注意）' : undefined}>
+                  {u.short_switch_count > 0 ? u.short_switch_count : '—'}{sus ? ' ⚠️' : ''}
+                </div>
+              </div>
+              {open && u.avatars.length > 1 && (
+                <div className="avatar-sublist">
+                  {u.avatars.map(a => (
+                    <div key={a.name} className="avatar-subrow">
+                      <span className="av-sub-name">{a.name}</span>
+                      <span className="av-sub-author">{a.author ?? '—'}</span>
+                      <span className="av-sub-count">{a.count}回</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Main component
 // ──────────────────────────────────────────────────────────────────
@@ -288,6 +362,7 @@ export function EventAnalyticsPanel({ eventId, eventName, event }: EventAnalytic
   const [timeline, setTimeline] = useState<TimelinePoint[]>([])
   const [rankings, setRankings] = useState<UserRankingItem[]>([])
   const [detailed, setDetailed] = useState<DetailedEventStats | null>(null)
+  const [avatars, setAvatars]   = useState<AvatarUser[]>([])
   const [rankSort, setRankSort] = useState<'attendance' | 'stay'>('attendance')
 
   const [loading, setLoading] = useState(true)
@@ -303,18 +378,22 @@ export function EventAnalyticsPanel({ eventId, eventName, event }: EventAnalytic
     setRankings([])
     setDetailed(null)
 
+    setAvatars([])
+
     Promise.all([
       fetch(`/api/analytics/events/${eventId}/stats`).then(r => r.json()),
       fetch(`/api/analytics/events/${eventId}/timeline`).then(r => r.json()),
       fetch(`/api/analytics/events/${eventId}/rankings?sort=attendance`).then(r => r.json()),
       fetch(`/api/analytics/events/${eventId}/detailed`).then(r => r.json()),
+      fetch(`/api/events/${eventId}/avatars`).then(r => r.json()),
     ])
-      .then(([statsRes, timelineRes, rankRes, detailedRes]) => {
+      .then(([statsRes, timelineRes, rankRes, detailedRes, avatarRes]) => {
         if (cancelled) return
         if (statsRes.success)    setStats(statsRes.data)
         if (timelineRes.success) setTimeline(timelineRes.data)
         if (rankRes.success)     setRankings(rankRes.data)
         if (detailedRes.success) setDetailed(detailedRes.data)
+        if (avatarRes.success)   setAvatars(avatarRes.data)
         if (!statsRes.success)   setError(statsRes.error ?? 'Failed to load stats')
       })
       .catch(err => { if (!cancelled) setError(err.message) })
@@ -414,6 +493,8 @@ export function EventAnalyticsPanel({ eventId, eventName, event }: EventAnalytic
         {activeTab === 'attendees' && (
           <PlayerEventTable eventId={eventId} />
         )}
+
+        {activeTab === 'avatars' && <AvatarTab users={avatars} />}
 
         {activeTab === 'rankings' && (
           <div className="rankings-tab">

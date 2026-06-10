@@ -22,6 +22,10 @@ const ACCESS_HIDDEN_RE = /~hidden\(/
 const ACCESS_FRIENDS_RE = /~friends\(/
 const ACCESS_CAN_REQUEST_INVITE_RE = /~canRequestInvite/
 const ACCESS_GROUP_RE = /~group\(/
+// アバター切替: "[Behaviour] Switching <表示名> to avatar <アバター名>"
+const AVATAR_SWITCH_RE = /\[Behaviour\] Switching (.+?) to avatar (.+)$/
+// アバターの作者: "[AssetBundleDownloadManager] [N] Unpacking Avatar (<アバター名> by <作者>)"
+const AVATAR_AUTHOR_RE = /Unpacking Avatar \((.+) by (.+)\)$/
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -43,16 +47,25 @@ export interface ClientWorldSession {
   playerEvents: ClientPlayerEvent[]
 }
 
+export interface ClientAvatarSwitch {
+  displayName: string
+  avatarName: string
+  author?: string
+  timestamp: string
+}
+
 export interface ClientParseResult {
   fileName: string
   fileHash: string
   sessions: ClientWorldSession[]
+  avatarSwitches: ClientAvatarSwitch[]
   summary: {
     totalLines: number
     joinCount: number
     leaveCount: number
     uniquePlayers: number
     worldChanges: number
+    avatarSwitches: number
   }
 }
 
@@ -179,6 +192,8 @@ export async function parseLogFileInBrowser(file: File): Promise<ClientParseResu
   const fileHash = await sha256hex(content)
 
   const events: RawEvent[] = []
+  const rawSwitches: { displayName: string; avatarName: string; timestamp: string }[] = []
+  const authorByAvatar = new Map<string, string>() // avatar名 → 作者（Unpacking行から）
   let totalLines = 0
   let pos = 0
   while (pos <= content.length) {
@@ -189,23 +204,42 @@ export async function parseLogFileInBrowser(file: File): Promise<ClientParseResu
     pos = end + 1
     totalLines++
     const ev = parseLine(line)
-    if (ev) events.push(ev)
+    if (ev) { events.push(ev); continue }
+
+    // アバター切替（タイムスタンプ付き行のみ）
+    const sw = line.match(AVATAR_SWITCH_RE)
+    if (sw) {
+      const ts = line.match(TIMESTAMP_RE)
+      if (ts) rawSwitches.push({ displayName: sw[1].trim(), avatarName: sw[2].trim(), timestamp: parseTimestamp(ts[1]) })
+      continue
+    }
+    // アバター作者（名前→作者の対応表を作る）
+    const au = line.match(AVATAR_AUTHOR_RE)
+    if (au) authorByAvatar.set(au[1].trim(), au[2].trim())
   }
 
   const sessions = segmentIntoSessions(events)
   const playerEvents = events.filter(e => e.type === 'join' || e.type === 'leave') as ClientPlayerEvent[]
   const uniquePlayers = new Set(playerEvents.map(e => e.displayName))
 
+  // 切替に作者を後付け（同名アバターの作者を名前一致で補完）
+  const avatarSwitches: ClientAvatarSwitch[] = rawSwitches.map(s => ({
+    ...s,
+    author: authorByAvatar.get(s.avatarName),
+  }))
+
   return {
     fileName: file.name,
     fileHash,
     sessions,
+    avatarSwitches,
     summary: {
       totalLines,
       joinCount: playerEvents.filter(e => e.type === 'join').length,
       leaveCount: playerEvents.filter(e => e.type === 'leave').length,
       uniquePlayers: uniquePlayers.size,
       worldChanges: events.filter(e => e.type === 'entering_room').length,
+      avatarSwitches: avatarSwitches.length,
     },
   }
 }

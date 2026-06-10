@@ -117,6 +117,7 @@ export function LogImporter() {
         fileName: file.name,
         fileHash: parsed.fileHash,
         sessions: parsed.sessions,
+        avatarSwitches: parsed.avatarSwitches,
         cutoffHour,
         mainWorld: mainWorld.trim() || undefined,
         series: series.trim() || undefined,
