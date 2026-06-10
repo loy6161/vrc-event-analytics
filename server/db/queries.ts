@@ -176,16 +176,25 @@ export interface InsertPlayerEventInput {
   log_file?: string
 }
 
+// libSQL(Turso) のバッチ/ペイロード上限とサーバーレスのタイムアウトを避けるため、
+// 大きいログは一定件数ずつに分割して書き込む。
+const DB_CHUNK = 500
+
 export async function insertPlayerEventsBatch(events: InsertPlayerEventInput[]): Promise<number> {
   if (events.length === 0) return 0
   const db = getDatabase()
-  const stmts = events.map(e => ({
-    sql: `INSERT OR IGNORE INTO player_events (event_id, user_id, display_name, event_type, timestamp, log_file)
-          VALUES (?, ?, ?, ?, ?, ?)`,
-    args: [e.event_id, e.user_id ?? null, e.display_name, e.event_type, e.timestamp, e.log_file ?? null],
-  }))
-  const results = await db.batch(stmts, 'write')
-  return results.reduce((sum, r) => sum + r.rowsAffected, 0)
+  let inserted = 0
+  for (let i = 0; i < events.length; i += DB_CHUNK) {
+    const slice = events.slice(i, i + DB_CHUNK)
+    const stmts = slice.map(e => ({
+      sql: `INSERT OR IGNORE INTO player_events (event_id, user_id, display_name, event_type, timestamp, log_file)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [e.event_id, e.user_id ?? null, e.display_name, e.event_type, e.timestamp, e.log_file ?? null],
+    }))
+    const results = await db.batch(stmts, 'write')
+    inserted += results.reduce((sum, r) => sum + r.rowsAffected, 0)
+  }
+  return inserted
 }
 
 export async function getPlayerEventsByEventId(eventId: number): Promise<PlayerEvent[]> {
@@ -241,9 +250,29 @@ export async function upsertUser(data: UpsertUserInput): Promise<void> {
   }
 }
 
+// 旧実装は1人ずつ SELECT+UPDATE/INSERT を await（クラウドDBへN回往復＝タイムアウトの主因）。
+// user_id は UNIQUE 制約があるので ON CONFLICT で一括 upsert。user_id 無しは従来どおり INSERT OR IGNORE。
 export async function upsertUsersBatch(users: UpsertUserInput[]): Promise<void> {
-  for (const u of users) {
-    await upsertUser(u)
+  if (users.length === 0) return
+  const db = getDatabase()
+  const withId = users.filter(u => u.user_id)
+  const withoutId = users.filter(u => !u.user_id)
+
+  for (let i = 0; i < withId.length; i += DB_CHUNK) {
+    const stmts = withId.slice(i, i + DB_CHUNK).map(u => ({
+      sql: `INSERT INTO users (user_id, display_name, first_seen) VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET display_name = excluded.display_name`,
+      args: [u.user_id!, u.display_name, u.first_seen ?? null],
+    }))
+    if (stmts.length > 0) await db.batch(stmts, 'write')
+  }
+
+  for (let i = 0; i < withoutId.length; i += DB_CHUNK) {
+    const stmts = withoutId.slice(i, i + DB_CHUNK).map(u => ({
+      sql: 'INSERT OR IGNORE INTO users (user_id, display_name, first_seen) VALUES (NULL, ?, ?)',
+      args: [u.display_name, u.first_seen ?? null],
+    }))
+    if (stmts.length > 0) await db.batch(stmts, 'write')
   }
 }
 
@@ -315,6 +344,37 @@ export async function recordDisplayNameHistory(
       sql: 'INSERT INTO display_name_history (user_id, display_name, seen_at) VALUES (?, ?, ?)',
       args: [userId, displayName, seenAt],
     })
+  }
+}
+
+// 旧コードはルートで Promise.all(map(recordDisplayNameHistory)) ＝ 1人につき SELECT+INSERT を
+// 同時並行で発火（2N クエリのバースト）。重複判定を SQL 側 (WHERE NOT EXISTS) に寄せ、分割バッチ化する。
+export interface DisplayNameHistoryInput {
+  user_id: string | null
+  display_name: string
+  seen_at: string
+}
+
+export async function recordDisplayNameHistoryBatch(entries: DisplayNameHistoryInput[]): Promise<void> {
+  if (entries.length === 0) return
+  const db = getDatabase()
+  for (let i = 0; i < entries.length; i += DB_CHUNK) {
+    const stmts = entries.slice(i, i + DB_CHUNK).map(e =>
+      e.user_id
+        ? {
+            sql: `INSERT INTO display_name_history (user_id, display_name, seen_at)
+                  SELECT ?, ?, ? WHERE NOT EXISTS (
+                    SELECT 1 FROM display_name_history WHERE user_id = ? AND display_name = ?)`,
+            args: [e.user_id, e.display_name, e.seen_at, e.user_id, e.display_name],
+          }
+        : {
+            sql: `INSERT INTO display_name_history (user_id, display_name, seen_at)
+                  SELECT NULL, ?, ? WHERE NOT EXISTS (
+                    SELECT 1 FROM display_name_history WHERE user_id IS NULL AND display_name = ?)`,
+            args: [e.display_name, e.seen_at, e.display_name],
+          }
+    )
+    await db.batch(stmts, 'write')
   }
 }
 

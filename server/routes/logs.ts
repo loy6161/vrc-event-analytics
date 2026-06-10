@@ -20,7 +20,7 @@ import {
   deleteImportedLog,
   insertPlayerEventsBatch,
   upsertUsersBatch,
-  recordDisplayNameHistory,
+  recordDisplayNameHistoryBatch,
   type InsertPlayerEventInput,
   type UpsertUserInput,
 } from '../db/queries.js'
@@ -155,6 +155,9 @@ router.post(
     return fail(res, 'eventId must be a positive integer', 400)
   }
 
+  // ── DB書き込みは丸ごと try/catch。失敗しても原因をJSONで返す（旧コードは握り潰して荒い500） ──
+  try {
+
   // ── Load target event (if eventId provided) ──────────────────
   let event = parsedEventId != null ? await getEventById(parsedEventId) : null
   if (parsedEventId != null && !event) {
@@ -281,10 +284,12 @@ router.post(
 
   // Record display name history for each unique player
   const now = new Date().toISOString()
-  await Promise.all(
-    userInputs.map(({ user_id, display_name }) =>
-      recordDisplayNameHistory(user_id ?? null, display_name, now)
-    )
+  await recordDisplayNameHistoryBatch(
+    userInputs.map(({ user_id, display_name }) => ({
+      user_id: user_id ?? null,
+      display_name,
+      seen_at: now,
+    }))
   )
 
   // ── Mark log as imported ──────────────────────────────────────
@@ -302,6 +307,9 @@ router.post(
     usersUpserted: userInputs.length,
     logSummary: parsed.summary,
   })
+  } catch (err: any) {
+    return fail(res, `ログ取り込み中にエラー: ${err?.message ?? String(err)}`)
+  }
 })
 
 /**
