@@ -42,12 +42,37 @@ export function LogImporter() {
   const [isBulkDeleting, setIsBulkDeleting] = useState(false)
   // 深夜の区切り時刻: 翌朝この時刻までは前日のイベントとしてまとめる（既定6時）
   const [cutoffHour, setCutoffHour] = useState(6)
-  // メインのワールド名（部分一致・任意）。代表ワールド/イベント名に優先採用
-  const [mainWorld, setMainWorld] = useState('')
+  // メインのワールド名（部分一致・任意）。代表ワールド/イベント名に優先採用。
+  // 前回値を localStorage から復元（毎回入力しなくて済む）
+  const [mainWorld, setMainWorld] = useState(() => {
+    try { return localStorage.getItem('vrcea:lastMainWorld') ?? '' } catch { return '' }
+  })
+  // 過去イベントのワールド名サジェスト候補（datalist 用）
+  const [worldSuggestions, setWorldSuggestions] = useState<string[]>([])
 
   useEffect(() => {
     loadImportHistory()
+    loadWorldSuggestions()
   }, [])
+
+  // 過去イベントのワールド名を新しい順・重複なしで集めてサジェスト候補にする
+  const loadWorldSuggestions = async () => {
+    try {
+      const res = await fetch('/api/events')
+      const json = await res.json()
+      if (json.success && Array.isArray(json.data)) {
+        const seen = new Set<string>()
+        const names: string[] = []
+        for (const ev of json.data) {
+          const w = (ev.world_name ?? '').trim()
+          if (w && !seen.has(w)) { seen.add(w); names.push(w) }
+        }
+        setWorldSuggestions(names)
+      }
+    } catch {
+      // サジェストは任意機能。失敗しても無視
+    }
+  }
 
   const loadImportHistory = async () => {
     try {
@@ -151,6 +176,7 @@ export function LogImporter() {
     // 取込でイベント/ユーザー/集計が変わるので、一覧・分析ページのキャッシュを全破棄
     dataCache.clear()
     await loadImportHistory()
+    loadWorldSuggestions()
     setIsImporting(false)
     setImportProgress(null)
   }
@@ -284,13 +310,35 @@ export function LogImporter() {
         <span>🏠 メインのワールド名（部分一致・任意）</span>
         <input
           value={mainWorld}
-          onChange={e => setMainWorld(e.target.value)}
+          onChange={e => {
+            setMainWorld(e.target.value)
+            try { localStorage.setItem('vrcea:lastMainWorld', e.target.value) } catch { /* 無視 */ }
+          }}
           disabled={isImporting}
           placeholder="例：ALLVERSE"
+          list="world-suggestions"
           style={{ padding: '4px 8px', borderRadius: 6, minWidth: 160 }}
         />
+        {mainWorld && (
+          <button
+            type="button"
+            onClick={() => {
+              setMainWorld('')
+              try { localStorage.removeItem('vrcea:lastMainWorld') } catch { /* 無視 */ }
+            }}
+            disabled={isImporting}
+            title="クリア"
+            style={{ padding: '4px 8px', borderRadius: 6, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', color: 'inherit' }}
+          >
+            ✕
+          </button>
+        )}
+        <datalist id="world-suggestions">
+          {worldSuggestions.map(w => <option key={w} value={w} />)}
+        </datalist>
         <span style={{ opacity: 0.6, width: '100%' }}>
-          指定すると、そのワールドをイベントの代表名に。空なら参加者が一番多いワールドを自動で代表にします（自宅ワールド回避）
+          指定すると、そのワールドをイベントの代表名に。空なら参加者が一番多いワールドを自動で代表にします（自宅ワールド回避）。
+          欄をクリック/↓キーで過去のワールド名から選べます。前回の入力は記憶されます。
         </span>
       </div>
 
