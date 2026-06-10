@@ -19,4 +19,9 @@ export const dataCache = {
       if (key.startsWith(prefix)) store.delete(key)
     }
   },
+  // データを変更する操作（ログ取込・削除など）の後に全キャッシュを破棄する。
+  // これを呼ばないと一覧/分析ページが古い内容を表示し続ける（取込してもイベントが出ない原因）。
+  clear(): void {
+    store.clear()
+  },
 }
