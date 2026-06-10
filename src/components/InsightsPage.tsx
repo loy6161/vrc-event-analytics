@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { RetentionChart } from './charts/RetentionChart'
 import { AttendanceTrendChart } from './charts/AttendanceTrendChart'
 import { EventTrendChart } from './charts/EventTrendChart'
-import type { EventInsights } from '../types/index.js'
+import type { EventInsights, SeriesComparison } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
 import '../styles/Charts.css'
 import '../styles/InsightsPage.css'
@@ -255,21 +255,51 @@ export function InsightsPage() {
   const [panelOrder, setPanelOrder] = useState<string[]>(loadOrder)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  // シリーズ絞り込み（'' = 全イベント）。絞ると成長率/リテンションもそのシリーズ内だけで計算される
+  const [seriesFilter, setSeriesFilter] = useState('')
+  const [seriesList, setSeriesList] = useState<string[]>([])
+  const [comparison, setComparison] = useState<SeriesComparison[]>([])
 
   const load = async (force = false) => {
-    const cached = dataCache.get<EventInsights>('insights')
+    const key = `insights:${seriesFilter}`
+    const cached = dataCache.get<EventInsights>(key)
     if (cached && !force) { setInsights(cached); setLoading(false); return }
     try {
-      const res = await fetch('/api/analytics/insights').then(r => r.json())
-      if (res.success) { dataCache.set('insights', res.data); setInsights(res.data) }
+      const url = seriesFilter
+        ? `/api/analytics/insights?series=${encodeURIComponent(seriesFilter)}`
+        : '/api/analytics/insights'
+      const res = await fetch(url).then(r => r.json())
+      if (res.success) { dataCache.set(key, res.data); setInsights(res.data) }
       else setError(res.error ?? 'Failed to load insights')
     } catch (err: any) { setError(err.message) }
     finally { setLoading(false); setRefreshing(false) }
   }
 
-  const refresh = () => { dataCache.delete('insights'); setRefreshing(true); load(true) }
+  const loadComparison = async (force = false) => {
+    const cached = dataCache.get<SeriesComparison[]>('series-comparison')
+    if (cached && !force) { setComparison(cached); return }
+    try {
+      const res = await fetch('/api/analytics/series-comparison').then(r => r.json())
+      if (res.success) { dataCache.set('series-comparison', res.data); setComparison(res.data) }
+    } catch { /* 比較表は任意機能 */ }
+  }
 
-  useEffect(() => { load() }, [])
+  const refresh = () => {
+    dataCache.deletePrefix('insights:')
+    dataCache.delete('series-comparison')
+    setRefreshing(true)
+    load(true)
+    loadComparison(true)
+  }
+
+  useEffect(() => { setLoading(true); load() }, [seriesFilter])
+  useEffect(() => {
+    loadComparison()
+    fetch('/api/events/series/list')
+      .then(r => r.json())
+      .then(json => { if (json.success && Array.isArray(json.data)) setSeriesList(json.data) })
+      .catch(() => { /* フィルタは任意機能 */ })
+  }, [])
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.effectAllowed = 'move'
@@ -364,6 +394,17 @@ export function InsightsPage() {
           <p>データに基づくイベント改善アドバイス</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {seriesList.length > 0 && (
+            <select
+              value={seriesFilter}
+              onChange={e => setSeriesFilter(e.target.value)}
+              style={{ padding: '6px 10px', borderRadius: 8, fontSize: 13 }}
+              title="シリーズで絞り込み（成長率・リテンションもシリーズ内で計算）"
+            >
+              <option value="">🎪 全イベント</option>
+              {seriesList.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
           <div className="insights-trend-badge">
             <span className="trend-icon">{trendIcon(insights.growth_trend)}</span>
             <span className="trend-label">{trendLabel(insights.growth_trend)}</span>
@@ -378,6 +419,58 @@ export function InsightsPage() {
           </button>
         </div>
       </div>
+
+      {/* シリーズ比較（2グループ以上あるときだけ表示） */}
+      {comparison.length >= 2 && (
+        <div className="insights-recs-panel" style={{ marginBottom: 16 }}>
+          <h3 className="insights-section-title">🎪 シリーズ比較</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'right', opacity: 0.7 }}>
+                  <th style={{ textAlign: 'left', padding: '6px 8px' }}>シリーズ</th>
+                  <th style={{ padding: '6px 8px' }}>開催数</th>
+                  <th style={{ padding: '6px 8px' }}>平均参加者</th>
+                  <th style={{ padding: '6px 8px' }}>最大</th>
+                  <th style={{ padding: '6px 8px' }}>ユニーク</th>
+                  <th style={{ padding: '6px 8px' }}>リピート率</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px' }}>期間</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparison.map(c => (
+                  <tr
+                    key={c.series || '__none__'}
+                    style={{
+                      textAlign: 'right',
+                      borderTop: '1px solid rgba(128,128,128,0.15)',
+                      background: seriesFilter && c.series === seriesFilter ? 'rgba(99,102,241,0.08)' : undefined,
+                      cursor: c.series ? 'pointer' : 'default',
+                    }}
+                    onClick={() => { if (c.series) setSeriesFilter(c.series === seriesFilter ? '' : c.series) }}
+                    title={c.series ? 'クリックでこのシリーズに絞り込み' : undefined}
+                  >
+                    <td style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600 }}>
+                      {c.series || <span style={{ opacity: 0.5 }}>未分類</span>}
+                    </td>
+                    <td style={{ padding: '6px 8px' }}>{c.event_count}回</td>
+                    <td style={{ padding: '6px 8px' }}>{c.avg_attendees}人</td>
+                    <td style={{ padding: '6px 8px' }}>{c.max_attendees}人</td>
+                    <td style={{ padding: '6px 8px' }}>{c.unique_users}人</td>
+                    <td style={{ padding: '6px 8px' }}>{(c.repeat_rate * 100).toFixed(0)}%</td>
+                    <td style={{ textAlign: 'left', padding: '6px 8px', opacity: 0.7 }}>
+                      {c.first_date}{c.event_count > 1 ? ` 〜 ${c.last_date}` : ''}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ fontSize: 12, opacity: 0.55, margin: '8px 0 0' }}>
+            行をクリックするとそのシリーズだけのインサイトに切り替わります。リピート率＝そのシリーズに2回以上参加した人の割合。
+          </p>
+        </div>
+      )}
 
       {/* Health Score + Recommendations (fixed, not draggable) */}
       <div className="insights-top-row">

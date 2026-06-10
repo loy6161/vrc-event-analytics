@@ -23,7 +23,16 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
     world_name: '',
     description: '',
     tags: '',
+    series: '',
   })
+  const [seriesSuggestions, setSeriesSuggestions] = useState<string[]>([])
+
+  useEffect(() => {
+    fetch('/api/events/series/list')
+      .then(r => r.json())
+      .then(json => { if (json.success && Array.isArray(json.data)) setSeriesSuggestions(json.data) })
+      .catch(() => { /* サジェストは任意機能 */ })
+  }, [])
 
   useEffect(() => {
     if (eventId) {
@@ -47,6 +56,7 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
           world_name: event.world_name || '',
           description: event.description || '',
           tags: event.tags?.join(',') || '',
+          series: event.series || '',
         })
       } else {
         setError(data.error)
@@ -93,6 +103,7 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
         world_name: form.world_name || undefined,
         description: form.description || undefined,
         tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : undefined,
+        series: form.series.trim(), // '' = 未分類（解除）
       }
 
       const response = await fetch(url, {
@@ -228,6 +239,23 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
             disabled={submitting}
             rows={4}
           />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="series">シリーズ名</label>
+          <input
+            id="series"
+            name="series"
+            type="text"
+            placeholder="例：clubVERSE（空＝未分類）"
+            value={form.series}
+            onChange={handleChange}
+            disabled={submitting}
+            list="form-series-suggestions"
+          />
+          <datalist id="form-series-suggestions">
+            {seriesSuggestions.map(s => <option key={s} value={s} />)}
+          </datalist>
         </div>
 
         <div className="form-group">

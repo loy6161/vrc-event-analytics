@@ -16,6 +16,7 @@ interface CreatedEvent {
   name: string
   date: string
   worldName?: string
+  series?: string
   merged?: boolean
 }
 
@@ -50,11 +51,23 @@ export function LogImporter() {
   })
   // 過去イベントのワールド名サジェスト候補（datalist 用）
   const [worldSuggestions, setWorldSuggestions] = useState<string[]>([])
+  // シリーズ名（任意）。空なら過去イベントのワールドから自動推定される
+  const [series, setSeries] = useState('')
+  const [seriesSuggestions, setSeriesSuggestions] = useState<string[]>([])
 
   useEffect(() => {
     loadImportHistory()
     loadWorldSuggestions()
+    loadSeriesSuggestions()
   }, [])
+
+  const loadSeriesSuggestions = async () => {
+    try {
+      const res = await fetch('/api/events/series/list')
+      const json = await res.json()
+      if (json.success && Array.isArray(json.data)) setSeriesSuggestions(json.data)
+    } catch { /* サジェストは任意機能 */ }
+  }
 
   // 過去イベントのワールド名を新しい順・重複なしで集めてサジェスト候補にする
   const loadWorldSuggestions = async () => {
@@ -113,6 +126,7 @@ export function LogImporter() {
         sessions: parsed.sessions,
         cutoffHour,
         mainWorld: mainWorld.trim() || undefined,
+        series: series.trim() || undefined,
         force,
       }),
     })
@@ -208,6 +222,7 @@ export function LogImporter() {
     dataCache.clear()
     await loadImportHistory()
     loadWorldSuggestions()
+    loadSeriesSuggestions()
     setIsImporting(false)
     setImportProgress(null)
   }
@@ -371,6 +386,25 @@ export function LogImporter() {
           指定すると、そのワールドをイベントの代表名に。空なら参加者が一番多いワールドを自動で代表にします（自宅ワールド回避）。
           欄をクリック/↓キーで過去のワールド名から選べます。前回の入力は記憶されます。
         </span>
+
+        <span style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.07)', margin: '4px 0' }} />
+
+        <span>🎪 シリーズ名（任意）</span>
+        <input
+          value={series}
+          onChange={e => setSeries(e.target.value)}
+          disabled={isImporting}
+          placeholder="例：clubVERSE（空なら自動判定）"
+          list="series-suggestions"
+          style={{ padding: '4px 8px', borderRadius: 6, minWidth: 160 }}
+        />
+        <datalist id="series-suggestions">
+          {seriesSuggestions.map(s => <option key={s} value={s} />)}
+        </datalist>
+        <span style={{ opacity: 0.6, width: '100%' }}>
+          clubVERSE / theALL / VERSARY のような「どのイベントの回か」の分類。シリーズ別の比較・統計に使います。
+          空のままなら、同じワールドの過去イベントやワールド名から自動で判定します（一度設定すれば次回から自動）。
+        </span>
       </div>
 
       {error && (
@@ -451,6 +485,12 @@ export function LogImporter() {
                         <li key={evt.id}>
                           <a href="#/events" className="created-event-link">{evt.name}</a>
                           <span className="created-event-date"> ({evt.date})</span>
+                          {evt.series && (
+                            <span style={{
+                              marginLeft: 6, padding: '1px 8px', borderRadius: 10, fontSize: 11,
+                              background: 'rgba(99,102,241,0.18)', color: '#a5b4fc', fontWeight: 600,
+                            }}>🎪 {evt.series}</span>
+                          )}
                         </li>
                       ))}
                     </ul>
