@@ -6,6 +6,7 @@ import {
   updateEvent,
   deleteEvent,
   mergeEvents,
+  recomputeEventTimespan,
   getPlayerEventsByEventId,
   deletePlayerEventsByEventId,
 } from '../db/queries.js'
@@ -98,7 +99,20 @@ router.post('/merge', async (req: Request, res: Response) => {
   try {
     const event = await mergeEvents(target, sources)
     if (!event) return fail(res, 'ターゲットイベントが見つかりません', 404)
-    ok(res, event)
+    // 結合で player_events が移動するので開始/終了時刻を再計算
+    await recomputeEventTimespan(target)
+    ok(res, (await getEventById(target))!)
+  } catch (err: any) {
+    fail(res, err.message)
+  }
+})
+
+// 全イベントの開始/終了時刻を player_events の実データから一括再計算（バックフィル/修復用）
+router.post('/recompute-timespans', async (_req: Request, res: Response) => {
+  try {
+    const events = await getEvents()
+    for (const e of events) await recomputeEventTimespan(e.id)
+    ok(res, { recomputed: events.length })
   } catch (err: any) {
     fail(res, err.message)
   }

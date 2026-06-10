@@ -17,6 +17,7 @@ import {
   getEventById,
   findEventByDate,
   updateEvent,
+  recomputeEventTimespan,
   isLogImported,
   recordImportedLog,
   getImportedLogs,
@@ -222,6 +223,7 @@ router.post(
     }))
     if (insertInputs.length > 0) {
       totalInserted = await insertPlayerEventsBatch(insertInputs)
+      await recomputeEventTimespan(event.id)
     }
   } else {
     // ── No event specified: 論理的な「1日」ごとに find-or-create で1イベントに集約 ──
@@ -304,6 +306,9 @@ router.post(
         log_file: parsed.fileName,
       }))
       totalInserted += await insertPlayerEventsBatch(insertInputs)
+      // 開始/終了時刻を実データ（最早Join〜最遅Leave）から再計算。
+      // 結合で後続ファイルが入っても夜全体の範囲に広がる。
+      await recomputeEventTimespan(target!.id)
     }
   }
 

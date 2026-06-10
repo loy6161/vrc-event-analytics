@@ -163,6 +163,25 @@ export async function deleteEvent(id: number): Promise<boolean> {
   return result.rowsAffected > 0
 }
 
+// イベントの開始/終了時刻を、紐づく player_events の実タイムスタンプ最小〜最大から再計算する。
+// ・複数ログファイルを結合しても夜全体の範囲になる
+// ・timestamp は ISO ローカル("2025-01-17T23:50:00")なので MIN/MAX の文字列比較で
+//   日付込みで正しく並ぶ（深夜0時跨ぎでも開始/終了が逆転しない）
+export async function recomputeEventTimespan(eventId: number): Promise<void> {
+  const result = await getDatabase().execute({
+    sql: 'SELECT MIN(timestamp) AS min_ts, MAX(timestamp) AS max_ts FROM player_events WHERE event_id = ?',
+    args: [eventId],
+  })
+  const row = result.rows[0] as any
+  if (!row || !row.min_ts) return
+  const start = String(row.min_ts).slice(11, 16) // "HH:MM"
+  const end = String(row.max_ts).slice(11, 16)
+  await getDatabase().execute({
+    sql: 'UPDATE events SET start_time = ?, end_time = ? WHERE id = ?',
+    args: [start, end, eventId],
+  })
+}
+
 export async function mergeEvents(targetId: number, sourceIds: number[]): Promise<Event | null> {
   const db = getDatabase()
   const stmts = sourceIds.flatMap(srcId => [
