@@ -328,6 +328,7 @@ export async function mergeEvents(targetId: number, sourceIds: number[]): Promis
   const db = getDatabase()
   const stmts = sourceIds.flatMap(srcId => [
     { sql: 'UPDATE player_events SET event_id = ? WHERE event_id = ?', args: [targetId, srcId] },
+    { sql: 'UPDATE OR IGNORE avatar_switches SET event_id = ? WHERE event_id = ?', args: [targetId, srcId] },
     { sql: 'DELETE FROM events WHERE id = ?', args: [srcId] },
   ])
   await db.batch(stmts, 'write')
@@ -376,9 +377,106 @@ export async function getPlayerEventsByEventId(eventId: number): Promise<PlayerE
   return result.rows.map(r => mapPlayerEvent(r as any))
 }
 
+// ──────────────────────────────────────────────
+// Avatar switches
+// ──────────────────────────────────────────────
+
+export interface InsertAvatarSwitchInput {
+  event_id: number
+  display_name: string
+  avatar_name: string
+  avatar_author?: string | null
+  timestamp: string
+  log_file?: string
+}
+
+export async function insertAvatarSwitchesBatch(rows: InsertAvatarSwitchInput[]): Promise<number> {
+  if (rows.length === 0) return 0
+  const db = getDatabase()
+  let inserted = 0
+  for (let i = 0; i < rows.length; i += DB_CHUNK) {
+    const stmts = rows.slice(i, i + DB_CHUNK).map(e => ({
+      sql: `INSERT OR IGNORE INTO avatar_switches (event_id, display_name, avatar_name, avatar_author, timestamp, log_file)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [e.event_id, e.display_name, e.avatar_name, e.avatar_author ?? null, e.timestamp, e.log_file ?? null],
+    }))
+    const results = await db.batch(stmts, 'write')
+    inserted += results.reduce((sum, r) => sum + r.rowsAffected, 0)
+  }
+  return inserted
+}
+
+export interface EventAvatarUser {
+  display_name: string
+  switch_count: number          // 切替の総回数
+  short_switch_count: number    // 短時間(<60s)連続切替の回数（クラッシャー等の"怪しさ"指標）
+  current_avatar?: string       // 最後に切り替えたアバター
+  current_author?: string
+  avatars: Array<{ name: string; author?: string; count: number; last: string }>
+}
+
+// イベントのアバター使用サマリ（画像の User/Avatar/Author/切替回数/短時間切替 相当）。
+// 参加者(player_events)の在席に関係なくアバター切替ログを集計する。is_excluded ユーザーは除外。
+export async function getEventAvatarSummary(eventId: number): Promise<EventAvatarUser[]> {
+  const db = getDatabase()
+  const rows = (await db.execute({
+    sql: `SELECT display_name, avatar_name, avatar_author, timestamp
+          FROM avatar_switches
+          WHERE event_id = ?
+            AND display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)
+          ORDER BY display_name ASC, timestamp ASC`,
+    args: [eventId],
+  })).rows as any[]
+
+  const byUser = new Map<string, any[]>()
+  for (const r of rows) {
+    if (!byUser.has(r.display_name)) byUser.set(r.display_name, [])
+    byUser.get(r.display_name)!.push(r)
+  }
+
+  const SHORT_MS = 60_000
+  const result: EventAvatarUser[] = []
+  for (const [display_name, list] of byUser) {
+    const avatarMap = new Map<string, { name: string; author?: string; count: number; last: string }>()
+    let short_switch_count = 0
+    let prevMs: number | null = null
+    for (const r of list) {
+      const a = avatarMap.get(r.avatar_name) ?? { name: r.avatar_name, author: r.avatar_author ?? undefined, count: 0, last: r.timestamp }
+      a.count++
+      a.last = r.timestamp
+      if (r.avatar_author && !a.author) a.author = r.avatar_author
+      avatarMap.set(r.avatar_name, a)
+      const ms = new Date(r.timestamp).getTime()
+      if (prevMs !== null && ms - prevMs < SHORT_MS) short_switch_count++
+      prevMs = ms
+    }
+    const last = list[list.length - 1]
+    const avatars = Array.from(avatarMap.values()).sort((a, b) => b.count - a.count)
+    result.push({
+      display_name,
+      switch_count: list.length,
+      short_switch_count,
+      current_avatar: last?.avatar_name,
+      current_author: last?.avatar_author ?? undefined,
+      avatars,
+    })
+  }
+  // 切替が多い順
+  result.sort((a, b) => b.switch_count - a.switch_count || a.display_name.localeCompare(b.display_name))
+  return result
+}
+
 export async function deletePlayerEventsByEventId(eventId: number): Promise<number> {
   const result = await getDatabase().execute({
     sql: 'DELETE FROM player_events WHERE event_id = ?',
+    args: [eventId],
+  })
+  return result.rowsAffected
+}
+
+export async function deleteAvatarSwitchesByEventId(eventId: number): Promise<number> {
+  const result = await getDatabase().execute({
+    sql: 'DELETE FROM avatar_switches WHERE event_id = ?',
     args: [eventId],
   })
   return result.rowsAffected
@@ -599,6 +697,9 @@ export async function deleteImportedLog(id: number): Promise<{ deleted: boolean;
     args: [fileName],
   })
   const playerEventsDeleted = deleteResult.rowsAffected
+
+  // 同じログ由来のアバター切替も削除
+  await db.execute({ sql: 'DELETE FROM avatar_switches WHERE log_file = ?', args: [fileName] })
 
   let eventsDeleted = 0
   for (const eventId of affectedEventIds) {

@@ -24,6 +24,7 @@ import {
   getImportedLogs,
   deleteImportedLog,
   insertPlayerEventsBatch,
+  insertAvatarSwitchesBatch,
   upsertUsersBatch,
   recordDisplayNameHistoryBatch,
   type InsertPlayerEventInput,
@@ -37,10 +38,18 @@ const router = Router()
 // Takes segmented world sessions + file metadata, runs find-or-create per logical day,
 // inserts player_events, upserts users, records display name history.
 
+interface AvatarSwitchInput {
+  displayName: string
+  avatarName: string
+  author?: string
+  timestamp: string
+}
+
 interface SaveSessionsResult {
   createdEvents: { id: number; name: string; date: string; worldName?: string; series?: string; merged?: boolean }[]
   totalInserted: number
   usersUpserted: number
+  avatarSwitchesInserted: number
 }
 
 async function saveSessionsToDB(
@@ -49,6 +58,7 @@ async function saveSessionsToDB(
   cutoffHour: number,
   mainWorld: string,
   explicitSeries = '',
+  avatarSwitches: AvatarSwitchInput[] = [],
 ): Promise<SaveSessionsResult> {
   const norm = (s?: string) => (s ?? '').toLowerCase()
   const matchesMain = (name?: string) => !!mainWorld && norm(name).includes(norm(mainWorld))
@@ -62,8 +72,17 @@ async function saveSessionsToDB(
     byDay.get(day)!.push(session)
   }
 
+  // アバター切替を論理日でバケツ分け（player_events と同じ区切りで同じイベントに紐付く）
+  const avatarByDay = new Map<string, AvatarSwitchInput[]>()
+  for (const sw of avatarSwitches) {
+    const day = logicalDate(sw.timestamp, cutoffHour)
+    if (!avatarByDay.has(day)) avatarByDay.set(day, [])
+    avatarByDay.get(day)!.push(sw)
+  }
+
   const createdEvents: SaveSessionsResult['createdEvents'] = []
   let totalInserted = 0
+  let avatarSwitchesInserted = 0
 
   for (const [day, daySessions] of byDay) {
     const dayPlayerEvents = daySessions.flatMap(s => s.playerEvents)
@@ -124,6 +143,19 @@ async function saveSessionsToDB(
     }))
     totalInserted += await insertPlayerEventsBatch(insertInputs)
     await recomputeEventTimespan(target!.id)
+
+    // その日のアバター切替を同じイベントに紐付け
+    const daySwitches = avatarByDay.get(day) ?? []
+    if (daySwitches.length > 0) {
+      avatarSwitchesInserted += await insertAvatarSwitchesBatch(daySwitches.map(sw => ({
+        event_id: target!.id,
+        display_name: sw.displayName,
+        avatar_name: sw.avatarName,
+        avatar_author: sw.author ?? null,
+        timestamp: sw.timestamp,
+        log_file: fileName,
+      })))
+    }
   }
 
   // Collect unique players
@@ -145,7 +177,7 @@ async function saveSessionsToDB(
     userInputs.map(({ user_id, display_name }) => ({ user_id: user_id ?? null, display_name, seen_at: now }))
   )
 
-  return { createdEvents, totalInserted, usersUpserted: userInputs.length }
+  return { createdEvents, totalInserted, usersUpserted: userInputs.length, avatarSwitchesInserted }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -404,7 +436,7 @@ router.post(
  *   force      - 重複チェックをスキップ
  */
 router.post('/import-parsed', async (req: Request, res: Response) => {
-  const { fileName, fileHash, sessions, force } = req.body ?? {}
+  const { fileName, fileHash, sessions, force, avatarSwitches } = req.body ?? {}
 
   if (typeof fileName !== 'string' || !fileName) return fail(res, 'fileName is required', 400)
   if (typeof fileHash !== 'string' || !/^[a-f0-9]{64}$/.test(fileHash)) return fail(res, 'fileHash must be a SHA-256 hex string', 400)
@@ -414,13 +446,14 @@ router.post('/import-parsed', async (req: Request, res: Response) => {
   if (isNaN(cutoffHour) || cutoffHour < 0 || cutoffHour > 12) cutoffHour = 6
   const mainWorld = typeof req.body?.mainWorld === 'string' ? req.body.mainWorld.trim() : ''
   const series = typeof req.body?.series === 'string' ? req.body.series.trim() : ''
+  const switches: AvatarSwitchInput[] = Array.isArray(avatarSwitches) ? avatarSwitches : []
 
   try {
     if (!force && await isLogImported(fileHash)) {
       return ok(res, { alreadyImported: true, fileName, fileHash })
     }
 
-    const saved = await saveSessionsToDB(sessions as WorldSession[], fileName, cutoffHour, mainWorld, series)
+    const saved = await saveSessionsToDB(sessions as WorldSession[], fileName, cutoffHour, mainWorld, series, switches)
     await recordImportedLog(fileName, fileHash, saved.totalInserted)
 
     ok(res, {
@@ -430,6 +463,7 @@ router.post('/import-parsed', async (req: Request, res: Response) => {
       sessionsFound: sessions.length,
       createdEvents: saved.createdEvents,
       playerEventsInserted: saved.totalInserted,
+      avatarSwitchesInserted: saved.avatarSwitchesInserted,
       usersUpserted: saved.usersUpserted,
     })
   } catch (err: any) {

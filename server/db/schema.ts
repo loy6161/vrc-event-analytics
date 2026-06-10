@@ -158,6 +158,22 @@ export async function initializeDatabase(): Promise<void> {
       sort_order INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- アバター切替イベント。VRChatログの "Switching <name> to avatar <avatar>" 行から抽出。
+    -- avatar_author は "Unpacking Avatar (<avatar> by <author>)" 行から名前一致で補完。
+    CREATE TABLE IF NOT EXISTS avatar_switches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id INTEGER REFERENCES events(id),
+      display_name TEXT NOT NULL,
+      avatar_name TEXT NOT NULL,
+      avatar_author TEXT,
+      timestamp TEXT NOT NULL,
+      log_file TEXT,
+      UNIQUE(event_id, display_name, avatar_name, timestamp)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_avatar_switches_event ON avatar_switches(event_id);
+    CREATE INDEX IF NOT EXISTS idx_avatar_switches_name ON avatar_switches(display_name);
   `)
 
   // ── Migrations for pre-existing databases ─────────────────────────

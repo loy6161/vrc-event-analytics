@@ -390,3 +390,59 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ──── Avatar tab ──── */
+.avatar-table {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.avatar-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1.6fr 1.2fr 56px 80px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border-light);
+  font-size: 13px;
+}
+
+.avatar-row-head {
+  background: var(--color-surface-alt);
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--color-label);
+}
+
+.avatar-group:last-child .avatar-row { border-bottom: none; }
+.avatar-group.open { background: rgba(99,102,241,0.04); }
+
+.av-user { font-weight: 600; color: var(--color-text-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.av-avatar, .av-author { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.av-author { opacity: 0.75; }
+.av-num { text-align: right; font-variant-numeric: tabular-nums; }
+.av-sus { color: #e74c3c; font-weight: 700; }
+.av-caret { display: inline-block; width: 14px; opacity: 0.6; }
+
+.avatar-sublist {
+  padding: 2px 12px 8px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.avatar-subrow {
+  display: grid;
+  grid-template-columns: 1.6fr 1.2fr 56px;
+  gap: 10px;
+  font-size: 12px;
+  opacity: 0.8;
+  padding: 2px 0;
+}
+
+.av-sub-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.av-sub-author { opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.av-sub-count { text-align: right; }
