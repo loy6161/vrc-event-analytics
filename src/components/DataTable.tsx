@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
@@ -64,12 +64,21 @@ export function DataTable<T extends RowData>({
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     globalFilterFn: 'includesString',
+    // data の参照が変わるたびに1ページ目へ戻る既定動作を無効化。
+    // （バッジ付与などの行内編集で配列を作り直すと毎回トップへ戻ってしまうため）
+    autoResetPageIndex: false,
   })
 
   const { rows } = table.getRowModel()
   const totalFiltered = table.getFilteredRowModel().rows.length
   const pageCount = table.getPageCount()
   const { pageIndex, pageSize } = pagination
+
+  // autoReset を切った代わりに、フィルタ等で行数が減ってページが範囲外になったら末尾ページへ寄せる
+  useEffect(() => {
+    const last = Math.max(0, pageCount - 1)
+    if (pageIndex > last) setPagination(prev => ({ ...prev, pageIndex: last }))
+  }, [pageCount, pageIndex])
 
   const handleGlobalFilterChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
