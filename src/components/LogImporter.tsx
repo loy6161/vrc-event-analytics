@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { dataCache } from '../utils/dataCache.js'
+import { parseLogFileInBrowser } from '../utils/logParser.js'
 import '../styles/LogImporter.css'
 
 interface ImportedLog {
@@ -91,14 +92,29 @@ export function LogImporter() {
   }
 
   const importSingleFile = async (file: File, force = false): Promise<ImportResult> => {
-    // File オブジェクトを直接送信 — file.text() + JSON.stringify の二重メモリ確保を回避
-    const params = new URLSearchParams({ fileName: file.name, cutoffHour: String(cutoffHour) })
-    if (mainWorld.trim()) params.set('mainWorld', mainWorld.trim())
-    if (force) params.set('force', 'true')
-    const res = await fetch(`/api/logs/parse?${params}`, {
+    // 解析はブラウザ側で行う。サーバーには抽出済みイベント（数百KB）だけ送るので、
+    // 生ログ（数十〜数百MB）によるサーバーのメモリ落ち・タイムアウトが起きない。
+    let parsed
+    try {
+      parsed = await parseLogFileInBrowser(file)
+    } catch (err) {
+      return {
+        fileName: file.name, success: false,
+        message: `ファイル解析に失敗: ${err instanceof Error ? err.message : String(err)}`,
+      }
+    }
+
+    const res = await fetch('/api/logs/import-parsed', {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-      body: file,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: file.name,
+        fileHash: parsed.fileHash,
+        sessions: parsed.sessions,
+        cutoffHour,
+        mainWorld: mainWorld.trim() || undefined,
+        force,
+      }),
     })
 
     // レスポンスが JSON でないケース（Railwayのプロキシエラーなど）にも対応
