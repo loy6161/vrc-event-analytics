@@ -3,7 +3,7 @@ import { RetentionChart } from './charts/RetentionChart'
 import { AttendanceTrendChart } from './charts/AttendanceTrendChart'
 import { EventTrendChart } from './charts/EventTrendChart'
 import { SeriesOverlayChart } from './charts/SeriesOverlayChart'
-import type { EventInsights, SeriesComparison, SeriesTrend } from '../types/index.js'
+import type { EventInsights, SeriesComparison, SeriesTrend, FormatComparison } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
 import { useSeries } from '../contexts/SeriesContext'
 import '../styles/Charts.css'
@@ -262,6 +262,7 @@ export function InsightsPage() {
   const { series: seriesFilter, setSeries: setSeriesFilter, colorOf } = useSeries()
   const [comparison, setComparison] = useState<SeriesComparison[]>([])
   const [trends, setTrends] = useState<SeriesTrend[]>([])
+  const [formats, setFormats] = useState<FormatComparison[]>([])
 
   const load = async (force = false) => {
     const key = `insights:${seriesFilter}`
@@ -296,17 +297,33 @@ export function InsightsPage() {
     } catch { /* 重ね描きは任意機能 */ }
   }
 
+  // 開催形態比較。グローバルのシリーズ絞り込みに追従（シリーズ内の形態比較も可能）
+  const loadFormats = async (force = false) => {
+    const key = `format-comparison:${seriesFilter}`
+    const cached = dataCache.get<FormatComparison[]>(key)
+    if (cached && !force) { setFormats(cached); return }
+    try {
+      const url = seriesFilter
+        ? `/api/analytics/format-comparison?series=${encodeURIComponent(seriesFilter)}`
+        : '/api/analytics/format-comparison'
+      const res = await fetch(url).then(r => r.json())
+      if (res.success) { dataCache.set(key, res.data); setFormats(res.data) }
+    } catch { /* 形態比較は任意機能 */ }
+  }
+
   const refresh = () => {
     dataCache.deletePrefix('insights:')
     dataCache.delete('series-comparison')
     dataCache.delete('series-trends')
+    dataCache.deletePrefix('format-comparison:')
     setRefreshing(true)
     load(true)
     loadComparison(true)
     loadTrends(true)
+    loadFormats(true)
   }
 
-  useEffect(() => { setLoading(true); load() }, [seriesFilter])
+  useEffect(() => { setLoading(true); load(); loadFormats() }, [seriesFilter])
   useEffect(() => { loadComparison(); loadTrends() }, [])
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
@@ -476,6 +493,42 @@ export function InsightsPage() {
           </div>
           <p style={{ fontSize: 12, opacity: 0.55, margin: '8px 0 0' }}>
             行をクリックするとそのシリーズだけのインサイトに切り替わります。リピート率＝そのシリーズに2回以上参加した人の割合。
+          </p>
+        </div>
+      )}
+
+      {/* 開催形態比較（2形態以上あるときだけ表示）。手動の開催形態 > ログ由来のアクセス種別 */}
+      {formats.length >= 2 && (
+        <div className="insights-recs-panel" style={{ marginBottom: 16 }}>
+          <h3 className="insights-section-title">🚪 開催形態別の比較{seriesFilter ? `（${seriesFilter}内）` : ''}</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: 'right', opacity: 0.7 }}>
+                  <th style={{ textAlign: 'left', padding: '6px 8px' }}>開催形態</th>
+                  <th style={{ padding: '6px 8px' }}>開催数</th>
+                  <th style={{ padding: '6px 8px' }}>平均参加者</th>
+                  <th style={{ padding: '6px 8px' }}>最大</th>
+                  <th style={{ padding: '6px 8px' }}>ユニーク</th>
+                  <th style={{ padding: '6px 8px' }}>リピート率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {formats.map(f => (
+                  <tr key={f.format} style={{ textAlign: 'right', borderTop: '1px solid rgba(128,128,128,0.15)' }}>
+                    <td style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600 }}>{f.format}</td>
+                    <td style={{ padding: '6px 8px' }}>{f.event_count}回</td>
+                    <td style={{ padding: '6px 8px' }}>{f.avg_attendees}人</td>
+                    <td style={{ padding: '6px 8px' }}>{f.max_attendees}人</td>
+                    <td style={{ padding: '6px 8px' }}>{f.unique_users}人</td>
+                    <td style={{ padding: '6px 8px' }}>{(f.repeat_rate * 100).toFixed(0)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p style={{ fontSize: 12, opacity: 0.55, margin: '8px 0 0' }}>
+            形態＝イベント編集で設定した「開催形態」（事前申請制など）。未設定の場合はログ由来のアクセス種別（Group / Group+ / Group公開 等）で分類。
           </p>
         </div>
       )}

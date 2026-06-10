@@ -33,6 +33,7 @@ function mapEvent(row: any): Event {
     description: row.description ?? undefined,
     tags: jsonToTags(row.tags),
     series: row.series ?? undefined,
+    format: row.format ?? undefined,
     created_at: row.created_at,
   }
 }
@@ -106,12 +107,13 @@ export interface CreateEventInput {
   description?: string
   tags?: string[]
   series?: string
+  format?: string
 }
 
 export async function createEvent(data: CreateEventInput): Promise<Event> {
   const result = await getDatabase().execute({
-    sql: `INSERT INTO events (name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO events (name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series, format)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       data.name,
       data.date,
@@ -125,6 +127,7 @@ export async function createEvent(data: CreateEventInput): Promise<Event> {
       data.description ?? null,
       tagsToJson(data.tags),
       data.series || null, // 空文字は未分類(null)として保存
+      data.format || null,
     ],
   })
   if (data.series) await ensureSeries(data.series) // マスタ同期
@@ -139,7 +142,7 @@ export async function updateEvent(id: number, data: Partial<CreateEventInput>): 
     sql: `UPDATE events SET
             name = ?, date = ?, start_time = ?, end_time = ?,
             world_id = ?, instance_id = ?, world_name = ?,
-            region = ?, access_type = ?, description = ?, tags = ?, series = ?
+            region = ?, access_type = ?, description = ?, tags = ?, series = ?, format = ?
           WHERE id = ?`,
     args: [
       data.name ?? existing.name,
@@ -155,6 +158,7 @@ export async function updateEvent(id: number, data: Partial<CreateEventInput>): 
       tagsToJson(data.tags ?? existing.tags),
       // 空文字は「シリーズ解除」として null に正規化
       (data.series ?? existing.series) || null,
+      (data.format ?? existing.format) || null,
       id,
     ],
   })
@@ -585,6 +589,82 @@ export async function updateUser(
   })
 
   return getUserByDisplayName(displayName)
+}
+
+// ──────────────────────────────────────────────
+// User Badges（出演者制度・関係者・スタッフ・要注意）
+// ──────────────────────────────────────────────
+
+export type BadgeType = 'regular' | 'visitor' | 'performer' | 'manager' | 'staff' | 'watch'
+export const BADGE_TYPES: BadgeType[] = ['regular', 'visitor', 'performer', 'manager', 'staff', 'watch']
+// 「関係者」= 準市民アラートから除外する種別（要注意 watch は除外しない）
+export const RELATED_BADGE_TYPES: BadgeType[] = ['regular', 'visitor', 'performer', 'manager', 'staff']
+
+export interface UserBadge {
+  id: number
+  display_name: string
+  badge_type: BadgeType
+  series: string // '' = 全体
+  note?: string
+}
+
+function mapBadge(row: any): UserBadge {
+  return {
+    id: row.id,
+    display_name: row.display_name,
+    badge_type: row.badge_type,
+    series: row.series ?? '',
+    note: row.note ?? undefined,
+  }
+}
+
+// 全ユーザーのバッジを display_name → UserBadge[] のMapで返す（一覧表示用に1クエリ）
+export async function getAllBadgesByUser(): Promise<Map<string, UserBadge[]>> {
+  const result = await getDatabase().execute(
+    `SELECT * FROM user_badges ORDER BY display_name, badge_type, series`
+  )
+  const map = new Map<string, UserBadge[]>()
+  for (const row of result.rows as any[]) {
+    const b = mapBadge(row)
+    if (!map.has(b.display_name)) map.set(b.display_name, [])
+    map.get(b.display_name)!.push(b)
+  }
+  return map
+}
+
+export async function getBadgesForUser(displayName: string): Promise<UserBadge[]> {
+  const result = await getDatabase().execute({
+    sql: `SELECT * FROM user_badges WHERE display_name = ? ORDER BY badge_type, series`,
+    args: [displayName],
+  })
+  return (result.rows as any[]).map(mapBadge)
+}
+
+// upsert（同じ 名前×種別×シリーズ ならメモだけ更新）
+export async function setBadge(displayName: string, badgeType: BadgeType, series: string, note?: string | null): Promise<void> {
+  await getDatabase().execute({
+    sql: `INSERT INTO user_badges (display_name, badge_type, series, note) VALUES (?, ?, ?, ?)
+          ON CONFLICT(display_name, badge_type, series) DO UPDATE SET note = excluded.note`,
+    args: [displayName, badgeType, series ?? '', note ?? null],
+  })
+}
+
+export async function removeBadge(displayName: string, badgeType: BadgeType, series: string): Promise<boolean> {
+  const result = await getDatabase().execute({
+    sql: `DELETE FROM user_badges WHERE display_name = ? AND badge_type = ? AND series = ?`,
+    args: [displayName, badgeType, series ?? ''],
+  })
+  return result.rowsAffected > 0
+}
+
+// 「関係者」（出演者系＋マネージャー＋スタッフ）の display_name 一覧。準市民アラートの除外に使う
+export async function getRelatedDisplayNames(): Promise<Set<string>> {
+  const ph = RELATED_BADGE_TYPES.map(() => '?').join(',')
+  const result = await getDatabase().execute({
+    sql: `SELECT DISTINCT display_name FROM user_badges WHERE badge_type IN (${ph})`,
+    args: RELATED_BADGE_TYPES,
+  })
+  return new Set((result.rows as any[]).map(r => String(r.display_name)))
 }
 
 // ──────────────────────────────────────────────

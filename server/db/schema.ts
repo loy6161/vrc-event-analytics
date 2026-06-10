@@ -159,6 +159,24 @@ export async function initializeDatabase(): Promise<void> {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    -- ユーザーバッジ。出演者制度（シリーズ別）・関係者・スタッフ・要注意を一元管理。
+    -- badge_type: 'regular'(レギュラー出演) | 'visitor'(ビジター出演) | 'performer'(出演者・汎用)
+    --           | 'manager'(出演者の関係者/マネージャー) | 'staff'(イベントスタッフ) | 'watch'(要注意人物)
+    -- series: 対象シリーズ名（'' = 全体）。レギュラー/ビジターは clubVERSE の制度なのでシリーズ別に持つ。
+    -- note: 補足（誰のマネージャーか・要注意の事由 等）
+    CREATE TABLE IF NOT EXISTS user_badges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      display_name TEXT NOT NULL,
+      badge_type TEXT NOT NULL,
+      series TEXT NOT NULL DEFAULT '',
+      note TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(display_name, badge_type, series)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_badges_name ON user_badges(display_name);
+    CREATE INDEX IF NOT EXISTS idx_user_badges_type ON user_badges(badge_type);
+
     -- アバター切替イベント。VRChatログの "Switching <name> to avatar <avatar>" 行から抽出。
     -- avatar_author は "Unpacking Avatar (<avatar> by <author>)" 行から名前一致で補完。
     CREATE TABLE IF NOT EXISTS avatar_switches (
@@ -183,6 +201,25 @@ export async function initializeDatabase(): Promise<void> {
     await db.execute('ALTER TABLE events ADD COLUMN series TEXT')
   } catch { /* column already exists */ }
   await db.execute('CREATE INDEX IF NOT EXISTS idx_events_series ON events(series)')
+
+  // 開催形態（手動）。事前申請制・招待制など、ログから取れない運用形態を記録する
+  try {
+    await db.execute('ALTER TABLE events ADD COLUMN format TEXT')
+  } catch { /* column already exists */ }
+
+  // access_type の精緻化バックフィル（冪等）。
+  // 旧パーサーは group インスタンスを一律 'group' にしていたが、instance_id には
+  // ~groupAccessType(plus|members|public) が残っているので、そこから Group+/Group公開 を復元する。
+  await db.execute(`UPDATE events SET access_type = 'group+'
+    WHERE instance_id LIKE '%groupAccessType(plus)%' AND access_type != 'group+'`)
+  await db.execute(`UPDATE events SET access_type = 'group public'
+    WHERE instance_id LIKE '%groupAccessType(public)%' AND access_type != 'group public'`)
+
+  // 旧 users.performer_role を user_badges へ移行（消費型＝一度きり）。
+  // レギュラー/ビジターは clubVERSE の制度なので series='clubVERSE' で移す。
+  await db.execute(`INSERT OR IGNORE INTO user_badges (display_name, badge_type, series)
+    SELECT display_name, performer_role, 'clubVERSE' FROM users WHERE performer_role IS NOT NULL`)
+  await db.execute(`UPDATE users SET performer_role = NULL WHERE performer_role IS NOT NULL`)
 
   // 既存イベントで使われているシリーズ名を series マスタへ取り込む（初回のみ・色などは未設定）。
   // 既に行があれば無視されるので何度実行しても安全。

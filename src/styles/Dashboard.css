@@ -427,6 +427,16 @@
   border-color: #27ae60;
 }
 
+.dash-prep-alert-reach {
+  background: rgba(241, 196, 15, 0.1);
+  border-color: #f1c40f;
+}
+
+.dash-prep-alert-reach .dash-prep-alert-badge {
+  background: rgba(241, 196, 15, 0.2);
+  color: #b7950b;
+}
+
 .dash-prep-alert-icon {
   font-size: 20px;
   flex-shrink: 0;

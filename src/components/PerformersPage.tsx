@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { dataCache } from '../utils/dataCache.js'
 import { useSeries } from '../contexts/SeriesContext'
+import { BadgeChips } from './UserBadges'
+import type { UserBadge } from '../types/index.js'
 import '../styles/PerformersPage.css'
 
 interface PerformerEvent {
@@ -14,7 +16,7 @@ interface Performer {
   id: number
   user_id: string | null
   display_name: string
-  performer_role: 'regular' | 'visitor'
+  badges: UserBadge[]
   is_staff: boolean
   notes: string | null
   tags: string[]
@@ -28,7 +30,7 @@ export function PerformersPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
-  const [roleFilter, setRoleFilter] = useState<'all' | 'regular' | 'visitor'>('all')
+  const [roleFilter, setRoleFilter] = useState<'all' | 'regular' | 'visitor' | 'performer' | 'manager' | 'staff'>('all')
 
   const { series } = useSeries()
 
@@ -56,12 +58,16 @@ export function PerformersPage() {
     setExpanded(next)
   }
 
+  const hasType = (p: Performer, t: string) => p.badges?.some(b => b.badge_type === t)
   const filtered = roleFilter === 'all'
     ? performers
-    : performers.filter(p => p.performer_role === roleFilter)
+    : performers.filter(p => hasType(p, roleFilter))
 
-  const regulars = performers.filter(p => p.performer_role === 'regular')
-  const visitors = performers.filter(p => p.performer_role === 'visitor')
+  const regulars = performers.filter(p => hasType(p, 'regular'))
+  const visitors = performers.filter(p => hasType(p, 'visitor'))
+  const generics = performers.filter(p => hasType(p, 'performer'))
+  const managers = performers.filter(p => hasType(p, 'manager'))
+  const staffs = performers.filter(p => hasType(p, 'staff'))
 
   if (loading) return <div className="performers-loading">読み込み中...</div>
   if (error) return <div className="performers-error">{error}</div>
@@ -70,9 +76,9 @@ export function PerformersPage() {
     <div className="performers-page">
       <div className="performers-header">
         <div>
-          <h1>出演者一覧</h1>
+          <h1>出演者・関係者一覧</h1>
           <p className="performers-desc">
-            レギュラー・ビジター出演者の出演回数と履歴を確認できます。
+            バッジ（レギュラー/ビジター/出演者/マネージャー/スタッフ）を持つユーザーの参加回数と履歴。バッジの付与・編集はユーザー一覧から。
           </p>
         </div>
         <button className="btn-refresh" onClick={refresh} disabled={refreshing}>
@@ -84,38 +90,46 @@ export function PerformersPage() {
       <div className="performers-summary">
         <div className="performer-stat-card">
           <div className="stat-value">{performers.length}</div>
-          <div className="stat-label">出演者総数</div>
+          <div className="stat-label">総数</div>
         </div>
         <div className="performer-stat-card performer-stat-regular">
           <div className="stat-value">{regulars.length}</div>
-          <div className="stat-label">🎤 レギュラー</div>
+          <div className="stat-label">⭐ レギュラー</div>
         </div>
         <div className="performer-stat-card performer-stat-visitor">
           <div className="stat-value">{visitors.length}</div>
-          <div className="stat-label">🌟 ビジター</div>
+          <div className="stat-label">🎟 ビジター</div>
+        </div>
+        <div className="performer-stat-card">
+          <div className="stat-value">{generics.length}</div>
+          <div className="stat-label">🎤 出演者</div>
+        </div>
+        <div className="performer-stat-card">
+          <div className="stat-value">{managers.length + staffs.length}</div>
+          <div className="stat-label">💼 関係者/スタッフ</div>
         </div>
       </div>
 
       {/* フィルタ */}
       <div className="performers-toolbar">
         <div className="role-filter-tabs">
-          <button
-            className={`role-tab ${roleFilter === 'all' ? 'active' : ''}`}
-            onClick={() => setRoleFilter('all')}
-          >
+          <button className={`role-tab ${roleFilter === 'all' ? 'active' : ''}`} onClick={() => setRoleFilter('all')}>
             全員 ({performers.length})
           </button>
-          <button
-            className={`role-tab role-tab-regular ${roleFilter === 'regular' ? 'active' : ''}`}
-            onClick={() => setRoleFilter('regular')}
-          >
-            🎤 レギュラー ({regulars.length})
+          <button className={`role-tab role-tab-regular ${roleFilter === 'regular' ? 'active' : ''}`} onClick={() => setRoleFilter('regular')}>
+            ⭐ レギュラー ({regulars.length})
           </button>
-          <button
-            className={`role-tab role-tab-visitor ${roleFilter === 'visitor' ? 'active' : ''}`}
-            onClick={() => setRoleFilter('visitor')}
-          >
-            🌟 ビジター ({visitors.length})
+          <button className={`role-tab role-tab-visitor ${roleFilter === 'visitor' ? 'active' : ''}`} onClick={() => setRoleFilter('visitor')}>
+            🎟 ビジター ({visitors.length})
+          </button>
+          <button className={`role-tab ${roleFilter === 'performer' ? 'active' : ''}`} onClick={() => setRoleFilter('performer')}>
+            🎤 出演者 ({generics.length})
+          </button>
+          <button className={`role-tab ${roleFilter === 'manager' ? 'active' : ''}`} onClick={() => setRoleFilter('manager')}>
+            💼 マネージャー ({managers.length})
+          </button>
+          <button className={`role-tab ${roleFilter === 'staff' ? 'active' : ''}`} onClick={() => setRoleFilter('staff')}>
+            🛠 スタッフ ({staffs.length})
           </button>
         </div>
       </div>
@@ -123,7 +137,7 @@ export function PerformersPage() {
       {/* 出演者一覧 */}
       {filtered.length === 0 ? (
         <div className="performers-empty">
-          出演者が登録されていません。ユーザー詳細ページで出演者ロールを設定してください。
+          まだ登録がありません。「ユーザー」ページでユーザーのバッジ列をクリックして付与してください。
         </div>
       ) : (
         <div className="performers-list">
@@ -134,22 +148,15 @@ export function PerformersPage() {
                 onClick={() => toggleExpand(performer.id)}
               >
                 <div className="performer-info">
-                  <span
-                    className={`performer-role-badge ${performer.performer_role === 'regular' ? 'badge-regular' : 'badge-visitor'}`}
-                  >
-                    {performer.performer_role === 'regular' ? '🎤 レギュラー' : '🌟 ビジター'}
-                  </span>
                   <span className="performer-name">{performer.display_name}</span>
-                  {performer.is_staff && (
-                    <span className="badge badge-staff">⭐ Staff</span>
-                  )}
+                  <BadgeChips badges={performer.badges ?? []} />
                   {performer.tags.length > 0 && performer.tags.map(tag => (
                     <span key={tag} className="tag-pill-small">{tag}</span>
                   ))}
                 </div>
                 <div className="performer-meta">
                   <span className="performer-appearances">
-                    出演 <strong>{performer.appearance_count}</strong> 回
+                    参加 <strong>{performer.appearance_count}</strong> 回
                   </span>
                   {performer.appearance_count > 0 && (
                     <span className="performer-last-event">

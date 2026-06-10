@@ -1,8 +1,48 @@
 import { Router } from 'express'
 import { getDatabase } from '../db/schema.js'
-import { getUsers, updateUser, getUserByDisplayName, getCitizenshipTargetSeries } from '../db/queries.js'
+import {
+  getUsers, updateUser, getUserByDisplayName, getCitizenshipTargetSeries,
+  getAllBadgesByUser, getBadgesForUser, setBadge, removeBadge, getRelatedDisplayNames,
+  BADGE_TYPES, type BadgeType,
+} from '../db/queries.js'
 
 const router = Router()
+
+// ── バッジ API ──────────────────────────────────────────────────────
+// PUT  /api/users/:displayName/badges   body: { badge_type, series?, note? } → upsert
+// DELETE /api/users/:displayName/badges body: { badge_type, series? } → 削除
+
+router.put('/:displayName/badges', async (req, res) => {
+  try {
+    const displayName = decodeURIComponent(req.params.displayName)
+    const { badge_type, series, note } = req.body ?? {}
+    if (!BADGE_TYPES.includes(badge_type)) {
+      res.status(400).json({ success: false, error: `badge_type は ${BADGE_TYPES.join('/')} のいずれか`, timestamp: new Date().toISOString() })
+      return
+    }
+    await setBadge(displayName, badge_type as BadgeType, typeof series === 'string' ? series : '', typeof note === 'string' && note.trim() ? note.trim() : null)
+    res.json({ success: true, data: await getBadgesForUser(displayName), timestamp: new Date().toISOString() })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    res.status(500).json({ success: false, error: message, timestamp: new Date().toISOString() })
+  }
+})
+
+router.delete('/:displayName/badges', async (req, res) => {
+  try {
+    const displayName = decodeURIComponent(req.params.displayName)
+    const { badge_type, series } = req.body ?? {}
+    if (!BADGE_TYPES.includes(badge_type)) {
+      res.status(400).json({ success: false, error: `badge_type は ${BADGE_TYPES.join('/')} のいずれか`, timestamp: new Date().toISOString() })
+      return
+    }
+    await removeBadge(displayName, badge_type as BadgeType, typeof series === 'string' ? series : '')
+    res.json({ success: true, data: await getBadgesForUser(displayName), timestamp: new Date().toISOString() })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    res.status(500).json({ success: false, error: message, timestamp: new Date().toISOString() })
+  }
+})
 
 // ── 市民権アラート ──────────────────────────────────────────────────
 // 準市民の昇格候補・失効を判定する。判定に数える参加実績は「市民権対象シリーズ」
@@ -25,9 +65,16 @@ router.get('/citizenship-alerts', async (_req, res) => {
       }
     }
 
-    // 準市民タグを持つユーザーだけ対象
+    // 準市民タグを持つユーザーだけ対象。
+    // 出演者・関係者（レギュラー/ビジター/出演者/マネージャー/スタッフのバッジ持ち・旧is_staff）は
+    // 市民権の対象外なのでアラートから除外する（要注意 watch は除外しない）
+    const related = await getRelatedDisplayNames()
     const users = await getUsers()
-    const semicitizens = users.filter(u => Array.isArray(u.tags) && u.tags.includes('準市民'))
+    const semicitizens = users.filter(u =>
+      Array.isArray(u.tags) && u.tags.includes('準市民')
+      && !related.has(u.display_name)
+      && !u.is_staff
+    )
 
     const evClause = targetEventIds ? ` AND pe.event_id IN (${targetEventIds.map(() => '?').join(',')})` : ''
     const evArgs = targetEventIds ?? []
@@ -72,8 +119,20 @@ router.get('/citizenship-alerts', async (_req, res) => {
           display_name: user.display_name, type: 'promotion',
           attendance_count, total_stay_hours: Math.round((total_stay / 60) * 10) / 10,
         })
+      } else if (attendance_count >= 2 && total_stay >= 300) {
+        // 🎯 リーチ: 昇格まであと一歩（あと参加1回 or 滞在1時間以内）。「あと何が足りないか」を返す
+        alerts.push({
+          display_name: user.display_name, type: 'reach',
+          attendance_count, total_stay_hours: Math.round((total_stay / 60) * 10) / 10,
+          need_attend: Math.max(0, 3 - attendance_count),
+          need_stay_minutes: Math.max(0, Math.round(360 - total_stay)),
+        })
       }
     }
+
+    // 失効 → 昇格 → リーチ の順
+    const order: Record<string, number> = { expired: 0, promotion: 1, reach: 2 }
+    alerts.sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9))
 
     res.json({ success: true, data: { alerts, target_series: targetSeries }, timestamp: new Date().toISOString() })
   } catch (error) {
@@ -88,22 +147,41 @@ router.get('/performers', async (req, res) => {
     const seriesRaw = req.query.series
     const series = typeof seriesRaw === 'string' && seriesRaw.trim() ? seriesRaw.trim() : null
 
-    // series 指定時は出演回数・出演履歴をそのシリーズのイベントに限定
-    const performerResult = await db.execute({
-      sql: `
-      SELECT u.*,
-        COUNT(DISTINCT pe.event_id) as appearance_count
-      FROM users u
-      LEFT JOIN player_events pe ON pe.display_name = u.display_name AND pe.event_type = 'join'
-        ${series ? 'AND pe.event_id IN (SELECT id FROM events WHERE series = ?)' : ''}
-      WHERE u.performer_role IS NOT NULL
-      GROUP BY u.id
-      ORDER BY u.performer_role ASC, appearance_count DESC
-    `,
+    // バッジ（出演者系＋関係者）を持つユーザーを対象にする。
+    // グローバルのシリーズ絞り込み時は「そのシリーズのバッジ or 全体バッジ」を持つ人に限定。
+    const badgeRows = (await db.execute({
+      sql: `SELECT b.*, u.id as uid, u.user_id, u.is_staff, u.notes as unotes, u.tags as utags
+            FROM user_badges b
+            JOIN users u ON u.display_name = b.display_name
+            WHERE b.badge_type IN ('regular','visitor','performer','manager','staff')
+            ${series ? "AND (b.series = ? OR b.series = '')" : ''}
+            ORDER BY b.display_name`,
       args: series ? [series] : [],
-    })
+    })).rows as any[]
 
-    const performers = await Promise.all(performerResult.rows.map(async (row: any) => {
+    // ユーザー単位に集約
+    const byUser = new Map<string, any>()
+    for (const row of badgeRows) {
+      if (!byUser.has(row.display_name)) {
+        byUser.set(row.display_name, {
+          id: row.uid,
+          user_id: row.user_id ?? null,
+          display_name: row.display_name,
+          is_staff: row.is_staff === 1,
+          notes: row.unotes ?? null,
+          tags: row.utags ? (() => { try { return JSON.parse(row.utags) } catch { return [] } })() : [],
+          badges: [],
+          appearance_count: 0,
+          events: [] as any[],
+        })
+      }
+      byUser.get(row.display_name)!.badges.push({
+        id: row.id, badge_type: row.badge_type, series: row.series ?? '', note: row.note ?? undefined,
+      })
+    }
+
+    // 出演回数・出演履歴（series 指定時はそのシリーズのイベントに限定）
+    const performers = await Promise.all(Array.from(byUser.values()).map(async p => {
       const eventsResult = await db.execute({
         sql: `SELECT DISTINCT e.id, e.name, e.date, e.start_time
               FROM player_events pe
@@ -111,21 +189,21 @@ router.get('/performers', async (req, res) => {
               WHERE pe.display_name = ? AND pe.event_type = 'join'
               ${series ? 'AND e.series = ?' : ''}
               ORDER BY e.date DESC`,
-        args: series ? [row.display_name, series] : [row.display_name],
+        args: series ? [p.display_name, series] : [p.display_name],
       })
-
-      return {
-        id: row.id,
-        user_id: row.user_id ?? null,
-        display_name: row.display_name,
-        performer_role: row.performer_role,
-        is_staff: row.is_staff === 1,
-        notes: row.notes ?? null,
-        tags: row.tags ? (() => { try { return JSON.parse(row.tags) } catch { return [] } })() : [],
-        appearance_count: row.appearance_count ?? 0,
-        events: eventsResult.rows,
-      }
+      p.events = eventsResult.rows
+      p.appearance_count = eventsResult.rows.length
+      return p
     }))
+
+    // レギュラー→ビジター→出演者→マネージャー→スタッフの順、同役は出演回数降順
+    const roleRank = (p: any) => {
+      const order = ['regular', 'visitor', 'performer', 'manager', 'staff']
+      let best = 99
+      for (const b of p.badges) { const i = order.indexOf(b.badge_type); if (i >= 0 && i < best) best = i }
+      return best
+    }
+    performers.sort((a, b) => roleRank(a) - roleRank(b) || b.appearance_count - a.appearance_count)
 
     res.json({ success: true, data: performers, timestamp: new Date().toISOString() })
   } catch (error) {
@@ -138,6 +216,7 @@ router.get('/', async (req, res) => {
   try {
     const db = getDatabase()
     const users = await getUsers()
+    const badgesByUser = await getAllBadgesByUser()
 
     const { from, to } = req.query
     const dateFrom = typeof from === 'string' && from ? from : null
@@ -191,6 +270,7 @@ router.get('/', async (req, res) => {
 
       return {
         ...user,
+        badges: badgesByUser.get(user.display_name) ?? [],
         attendance_count,
         total_stay_duration: Math.round(total_stay_duration),
         avg_stay_duration: attendance_count > 0 ? Math.round((total_stay_duration / attendance_count) * 10) / 10 : 0, // per event
