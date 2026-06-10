@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { RetentionChart } from './charts/RetentionChart'
 import { AttendanceTrendChart } from './charts/AttendanceTrendChart'
 import { EventTrendChart } from './charts/EventTrendChart'
-import type { EventInsights, SeriesComparison } from '../types/index.js'
+import { SeriesOverlayChart } from './charts/SeriesOverlayChart'
+import type { EventInsights, SeriesComparison, SeriesTrend } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
 import { useSeries } from '../contexts/SeriesContext'
 import '../styles/Charts.css'
@@ -258,8 +259,9 @@ export function InsightsPage() {
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   // シリーズ絞り込みはヘッダーのグローバルセレクタと連動（'' = 全イベント）。
   // 絞ると成長率/リテンションもそのシリーズ内だけで計算される
-  const { series: seriesFilter, setSeries: setSeriesFilter } = useSeries()
+  const { series: seriesFilter, setSeries: setSeriesFilter, colorOf } = useSeries()
   const [comparison, setComparison] = useState<SeriesComparison[]>([])
+  const [trends, setTrends] = useState<SeriesTrend[]>([])
 
   const load = async (force = false) => {
     const key = `insights:${seriesFilter}`
@@ -285,16 +287,27 @@ export function InsightsPage() {
     } catch { /* 比較表は任意機能 */ }
   }
 
+  const loadTrends = async (force = false) => {
+    const cached = dataCache.get<SeriesTrend[]>('series-trends')
+    if (cached && !force) { setTrends(cached); return }
+    try {
+      const res = await fetch('/api/analytics/series-trends').then(r => r.json())
+      if (res.success) { dataCache.set('series-trends', res.data); setTrends(res.data) }
+    } catch { /* 重ね描きは任意機能 */ }
+  }
+
   const refresh = () => {
     dataCache.deletePrefix('insights:')
     dataCache.delete('series-comparison')
+    dataCache.delete('series-trends')
     setRefreshing(true)
     load(true)
     loadComparison(true)
+    loadTrends(true)
   }
 
   useEffect(() => { setLoading(true); load() }, [seriesFilter])
-  useEffect(() => { loadComparison() }, [])
+  useEffect(() => { loadComparison(); loadTrends() }, [])
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.effectAllowed = 'move'
@@ -385,8 +398,8 @@ export function InsightsPage() {
       {/* Header */}
       <div className="insights-header">
         <div>
-          <h1>インサイト</h1>
-          <p>データに基づくイベント改善アドバイス</p>
+          <h1>インサイト{seriesFilter ? ` — 🎪 ${seriesFilter}` : ''}</h1>
+          <p>{seriesFilter ? `「${seriesFilter}」のデータに基づく改善アドバイス` : 'データに基づくイベント改善アドバイス'}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="insights-trend-badge">
@@ -403,6 +416,17 @@ export function InsightsPage() {
           </button>
         </div>
       </div>
+
+      {/* シリーズ重ね描き（全体ビューのみ・2シリーズ以上）。GA4 Comparisons 相当 */}
+      {!seriesFilter && trends.filter(t => t.series).length >= 2 && (
+        <div className="insights-recs-panel" style={{ marginBottom: 16 }}>
+          <h3 className="insights-section-title">🎪 シリーズ別の参加者推移（重ね描き）</h3>
+          <SeriesOverlayChart trends={trends} colorOf={colorOf} height={280} />
+          <p style={{ fontSize: 12, opacity: 0.55, margin: '8px 0 0' }}>
+            シリーズごとに色分けした参加者数の推移。週次と年次など開催ペースの違うシリーズを1枚で比較できます。
+          </p>
+        </div>
+      )}
 
       {/* シリーズ比較（2グループ以上あるときだけ表示） */}
       {comparison.length >= 2 && (

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { SeriesManager } from './SeriesManager'
 import '../styles/Settings.css'
 
 interface SettingsData {
@@ -113,6 +114,25 @@ export function Settings() {
               <code className="info-code">{DEFAULT_LOG_DIR}</code>
               <p className="info-desc">
                 VRChat はこのディレクトリに自動的にログを作成します。監視を有効化する前にこのディレクトリが存在することを確認してください。
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Series Management Section */}
+        <section className="settings-section">
+          <div className="section-header">
+            <h2>🎪 シリーズ管理</h2>
+            <p>イベントの分類（clubVERSE / theALL / VERSARY...）の色・改名・市民権判定対象・削除。改名は全イベントへ自動反映されます。</p>
+          </div>
+          <SeriesManager />
+          <div className="info-box" style={{ marginTop: 12 }}>
+            <span className="info-icon">🪪</span>
+            <div>
+              <p className="info-title">市民権の判定対象について</p>
+              <p className="info-desc">
+                準市民の昇格候補・90日失効の判定に「数える」参加実績を、ここでチェックしたシリーズのイベントだけに限定します。
+                市民権ステータス自体は全イベント横断のままで、ページ上部のシリーズ絞り込みには影響されません。
               </p>
             </div>
           </div>
