@@ -4,19 +4,26 @@ import { getUsers, updateUser, getUserByDisplayName } from '../db/queries.js'
 
 const router = Router()
 
-router.get('/performers', async (_req, res) => {
+router.get('/performers', async (req, res) => {
   try {
     const db = getDatabase()
+    const seriesRaw = req.query.series
+    const series = typeof seriesRaw === 'string' && seriesRaw.trim() ? seriesRaw.trim() : null
 
-    const performerResult = await db.execute(`
+    // series 指定時は出演回数・出演履歴をそのシリーズのイベントに限定
+    const performerResult = await db.execute({
+      sql: `
       SELECT u.*,
         COUNT(DISTINCT pe.event_id) as appearance_count
       FROM users u
       LEFT JOIN player_events pe ON pe.display_name = u.display_name AND pe.event_type = 'join'
+        ${series ? 'AND pe.event_id IN (SELECT id FROM events WHERE series = ?)' : ''}
       WHERE u.performer_role IS NOT NULL
       GROUP BY u.id
       ORDER BY u.performer_role ASC, appearance_count DESC
-    `)
+    `,
+      args: series ? [series] : [],
+    })
 
     const performers = await Promise.all(performerResult.rows.map(async (row: any) => {
       const eventsResult = await db.execute({
@@ -24,8 +31,9 @@ router.get('/performers', async (_req, res) => {
               FROM player_events pe
               JOIN events e ON e.id = pe.event_id
               WHERE pe.display_name = ? AND pe.event_type = 'join'
+              ${series ? 'AND e.series = ?' : ''}
               ORDER BY e.date DESC`,
-        args: [row.display_name],
+        args: series ? [row.display_name, series] : [row.display_name],
       })
 
       return {
@@ -56,6 +64,8 @@ router.get('/', async (req, res) => {
     const { from, to } = req.query
     const dateFrom = typeof from === 'string' && from ? from : null
     const dateTo = typeof to === 'string' && to ? to : null
+    const seriesRaw = req.query.series
+    const series = typeof seriesRaw === 'string' && seriesRaw.trim() ? seriesRaw.trim() : null
 
     const usersWithStats = await Promise.all(users.map(async user => {
       let joinSql = `SELECT pe.timestamp, pe.event_id
@@ -64,6 +74,8 @@ router.get('/', async (req, res) => {
       const joinArgs: any[] = [user.display_name]
       if (dateFrom) { joinSql += ` AND pe.timestamp >= ?`; joinArgs.push(dateFrom) }
       if (dateTo)   { joinSql += ` AND pe.timestamp <= ?`; joinArgs.push(dateTo + 'T23:59:59') }
+      // series 指定時は参加回数・滞在時間・初参加/最終参加をそのシリーズ内だけで計算
+      if (series)   { joinSql += ` AND pe.event_id IN (SELECT id FROM events WHERE series = ?)`; joinArgs.push(series) }
       joinSql += ` ORDER BY pe.timestamp ASC`
 
       const joinsResult = await db.execute({ sql: joinSql, args: joinArgs })

@@ -18,6 +18,12 @@ function parseId(param: string): number | null {
   return isNaN(n) ? null : n
 }
 
+// ?series= クエリ（'' や未指定は undefined = 全イベント）
+function seriesParam(req: Request): string | undefined {
+  const s = req.query.series
+  return typeof s === 'string' && s.trim() ? s.trim() : undefined
+}
+
 interface RawPlayerEvent {
   event_id?: number
   user_id: string | null
@@ -230,12 +236,14 @@ async function fetchPlayerEvents(eventId: number): Promise<RawPlayerEvent[]> {
   return result.rows as any[]
 }
 
-async function computePeriodStats(period: string): Promise<PeriodStats> {
+async function computePeriodStats(period: string, series?: string): Promise<PeriodStats> {
   const db = getDatabase()
 
   const eventsResult = await db.execute({
-    sql: `SELECT id, date FROM events WHERE date LIKE ? ORDER BY date`,
-    args: [`${period}%`],
+    sql: series
+      ? `SELECT id, date FROM events WHERE date LIKE ? AND series = ? ORDER BY date`
+      : `SELECT id, date FROM events WHERE date LIKE ? ORDER BY date`,
+    args: series ? [`${period}%`, series] : [`${period}%`],
   })
   const events = eventsResult.rows as any[]
   const event_count = events.length
@@ -262,7 +270,12 @@ async function computePeriodStats(period: string): Promise<PeriodStats> {
 
   let new_attendees = 0
   if (unique_attendees > 0) {
-    const priorEventsResult = await db.execute({ sql: `SELECT id FROM events WHERE date < ?`, args: [period] })
+    // series 指定時は「そのシリーズで初参加」を新規とみなす
+    const priorEventsResult = await db.execute(
+      series
+        ? { sql: `SELECT id FROM events WHERE date < ? AND series = ?`, args: [period, series] }
+        : { sql: `SELECT id FROM events WHERE date < ?`, args: [period] }
+    )
     const priorEvents = priorEventsResult.rows as any[]
     if (priorEvents.length > 0) {
       const priorIds = priorEvents.map(e => e.id)
@@ -334,10 +347,15 @@ router.get('/rankings', async (req: Request, res: Response) => {
     const sortBy = req.query.sort === 'stay' ? 'stay' : 'attendance'
     const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : undefined
     const period = typeof req.query.period === 'string' ? req.query.period : undefined
+    const series = seriesParam(req)
 
+    const conds: string[] = []
+    const args: any[] = []
+    if (period) { conds.push('date LIKE ?'); args.push(`${period}%`) }
+    if (series) { conds.push('series = ?'); args.push(series) }
     const idsResult = await db.execute(
-      period
-        ? { sql: `SELECT id FROM events WHERE date LIKE ?`, args: [`${period}%`] }
+      conds.length > 0
+        ? { sql: `SELECT id FROM events WHERE ${conds.join(' AND ')}`, args }
         : `SELECT id FROM events`
     )
     const eventIds = (idsResult.rows as any[]).map(r => r.id)
@@ -359,36 +377,46 @@ router.get('/rankings', async (req: Request, res: Response) => {
   } catch (err: any) { fail(res, err.message) }
 })
 
-router.get('/dashboard', async (_req: Request, res: Response) => {
+router.get('/dashboard', async (req: Request, res: Response) => {
   try {
     const db = getDatabase()
+    const series = seriesParam(req)
+    // series 指定時は全集計をそのシリーズのイベントに限定する
+    const evWhere = series ? ' WHERE series = ?' : ''
+    const peInEvents = series ? ` AND event_id IN (SELECT id FROM events WHERE series = ?)` : ''
+    const sArgs = series ? [series] : []
 
-    const totalEvents = ((await db.execute('SELECT COUNT(*) as n FROM events')).rows[0] as any).n as number
-    const totalVisits = ((await db.execute("SELECT COUNT(*) as n FROM player_events WHERE event_type = 'join'")).rows[0] as any).n as number
-    const totalUniqueVisitors = ((await db.execute("SELECT COUNT(DISTINCT display_name) as n FROM player_events WHERE event_type = 'join'")).rows[0] as any).n as number
+    const totalEvents = ((await db.execute({ sql: `SELECT COUNT(*) as n FROM events${evWhere}`, args: sArgs })).rows[0] as any).n as number
+    const totalVisits = ((await db.execute({ sql: `SELECT COUNT(*) as n FROM player_events WHERE event_type = 'join'${peInEvents}`, args: sArgs })).rows[0] as any).n as number
+    const totalUniqueVisitors = ((await db.execute({ sql: `SELECT COUNT(DISTINCT display_name) as n FROM player_events WHERE event_type = 'join'${peInEvents}`, args: sArgs })).rows[0] as any).n as number
     const avgPerEvent = totalEvents > 0 ? Math.round((totalVisits / totalEvents) * 10) / 10 : 0
 
-    const recentEventsResult = await db.execute(`
-      SELECT e.id, e.name, e.date, e.world_name,
+    const recentEventsResult = await db.execute({
+      sql: `
+      SELECT e.id, e.name, e.date, e.world_name, e.series,
         COUNT(DISTINCT CASE WHEN pe.event_type = 'join' THEN pe.display_name END) as unique_visitors,
         COUNT(CASE WHEN pe.event_type = 'join' THEN 1 END) as total_visits
       FROM events e
       LEFT JOIN player_events pe ON pe.event_id = e.id
+      ${series ? 'WHERE e.series = ?' : ''}
       GROUP BY e.id
       ORDER BY e.date DESC
       LIMIT 5
-    `)
+    `,
+      args: sArgs,
+    })
 
     const now = new Date()
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
     const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`
 
-    const hasCurrentMonth = (await db.execute({ sql: `SELECT 1 FROM events WHERE date LIKE ? LIMIT 1`, args: [`${currentMonth}%`] })).rows.length > 0
-    const hasPrevMonth = (await db.execute({ sql: `SELECT 1 FROM events WHERE date LIKE ? LIMIT 1`, args: [`${prevMonth}%`] })).rows.length > 0
+    const monthCond = series ? ` AND series = ?` : ''
+    const hasCurrentMonth = (await db.execute({ sql: `SELECT 1 FROM events WHERE date LIKE ?${monthCond} LIMIT 1`, args: [`${currentMonth}%`, ...sArgs] })).rows.length > 0
+    const hasPrevMonth = (await db.execute({ sql: `SELECT 1 FROM events WHERE date LIKE ?${monthCond} LIMIT 1`, args: [`${prevMonth}%`, ...sArgs] })).rows.length > 0
 
-    const currentMonthStats = hasCurrentMonth ? await computePeriodStats(currentMonth) : null
-    const prevMonthStats = hasPrevMonth ? await computePeriodStats(prevMonth) : null
+    const currentMonthStats = hasCurrentMonth ? await computePeriodStats(currentMonth, series) : null
+    const prevMonthStats = hasPrevMonth ? await computePeriodStats(prevMonth, series) : null
 
     ok(res, {
       total_events: totalEvents, total_visits: totalVisits, total_unique_visitors: totalUniqueVisitors, avg_per_event: avgPerEvent,
@@ -401,16 +429,21 @@ router.get('/period', async (req: Request, res: Response) => {
   const period = typeof req.query.period === 'string' ? req.query.period : null
   if (!period || !/^\d{4}(-\d{2})?$/.test(period)) return fail(res, 'period query parameter required (YYYY-MM or YYYY)', 400)
   try {
-    ok(res, await computePeriodStats(period))
+    ok(res, await computePeriodStats(period, seriesParam(req)))
   } catch (err: any) { fail(res, err.message) }
 })
 
-router.get('/periods', async (_req: Request, res: Response) => {
+router.get('/periods', async (req: Request, res: Response) => {
   try {
     const db = getDatabase()
-    const periodsResult = await db.execute(`SELECT DISTINCT substr(date, 1, 7) as period FROM events ORDER BY period ASC`)
+    const series = seriesParam(req)
+    const periodsResult = await db.execute(
+      series
+        ? { sql: `SELECT DISTINCT substr(date, 1, 7) as period FROM events WHERE series = ? ORDER BY period ASC`, args: [series] }
+        : `SELECT DISTINCT substr(date, 1, 7) as period FROM events ORDER BY period ASC`
+    )
     const periods = (periodsResult.rows as any[]).map(r => r.period)
-    const result = await Promise.all(periods.map(p => computePeriodStats(p)))
+    const result = await Promise.all(periods.map(p => computePeriodStats(p, series)))
     ok(res, result)
   } catch (err: any) { fail(res, err.message) }
 })

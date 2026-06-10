@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { dataCache } from '../utils/dataCache.js'
 import { parseLogFileInBrowser } from '../utils/logParser.js'
+import { useSeries } from '../contexts/SeriesContext'
 import '../styles/LogImporter.css'
 
 interface ImportedLog {
@@ -51,23 +52,15 @@ export function LogImporter() {
   })
   // 過去イベントのワールド名サジェスト候補（datalist 用）
   const [worldSuggestions, setWorldSuggestions] = useState<string[]>([])
-  // シリーズ名（任意）。空なら過去イベントのワールドから自動推定される
+  // シリーズ名（任意）。空なら過去イベントのワールドから自動推定される。
+  // サジェスト一覧はグローバル（ヘッダーと共通）から取得
   const [series, setSeries] = useState('')
-  const [seriesSuggestions, setSeriesSuggestions] = useState<string[]>([])
+  const { seriesList: seriesSuggestions, refreshSeriesList } = useSeries()
 
   useEffect(() => {
     loadImportHistory()
     loadWorldSuggestions()
-    loadSeriesSuggestions()
   }, [])
-
-  const loadSeriesSuggestions = async () => {
-    try {
-      const res = await fetch('/api/events/series/list')
-      const json = await res.json()
-      if (json.success && Array.isArray(json.data)) setSeriesSuggestions(json.data)
-    } catch { /* サジェストは任意機能 */ }
-  }
 
   // 過去イベントのワールド名を新しい順・重複なしで集めてサジェスト候補にする
   const loadWorldSuggestions = async () => {
@@ -222,7 +215,7 @@ export function LogImporter() {
     dataCache.clear()
     await loadImportHistory()
     loadWorldSuggestions()
-    loadSeriesSuggestions()
+    refreshSeriesList() // 新シリーズをヘッダーのセレクタに即反映
     setIsImporting(false)
     setImportProgress(null)
   }

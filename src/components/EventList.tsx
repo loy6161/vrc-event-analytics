@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Event } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
+import { useSeries } from '../contexts/SeriesContext'
 import '../styles/EventList.css'
 
 interface EventListProps {
@@ -13,8 +14,10 @@ export function EventList({ onSelect }: EventListProps) {
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [sortBy, setSortBy] = useState<'date' | 'name'>('date')
-  // シリーズフィルタ: 'all' | '__none__'（未分類） | シリーズ名
-  const [seriesFilter, setSeriesFilter] = useState('all')
+  // シリーズ絞り込みはヘッダーのグローバルセレクタと連動。
+  // 「全イベント」表示時のみ、未分類イベントだけを出すローカルトグルが使える（タグ付け作業用）
+  const { series: globalSeries, refreshSeriesList } = useSeries()
+  const [showUnclassifiedOnly, setShowUnclassifiedOnly] = useState(false)
 
   // 結合機能
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -98,6 +101,7 @@ export function EventList({ onSelect }: EventListProps) {
         setShowSeriesDialog(false)
         setSelectedIds(new Set())
         dataCache.clear()
+        refreshSeriesList() // ヘッダーのシリーズ一覧に即反映
         await fetchEvents(true)
       } else {
         setError(data.error)
@@ -141,8 +145,8 @@ export function EventList({ onSelect }: EventListProps) {
     e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     e.date.includes(searchTerm)
   )
-  if (seriesFilter === '__none__') filtered = filtered.filter(e => !e.series)
-  else if (seriesFilter !== 'all') filtered = filtered.filter(e => e.series === seriesFilter)
+  if (globalSeries) filtered = filtered.filter(e => e.series === globalSeries)
+  else if (showUnclassifiedOnly) filtered = filtered.filter(e => !e.series)
 
   if (sortBy === 'name') {
     filtered = filtered.sort((a, b) => a.name.localeCompare(b.name))
@@ -184,16 +188,16 @@ export function EventList({ onSelect }: EventListProps) {
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
         />
-        <select
-          className="sort-select"
-          value={seriesFilter}
-          onChange={e => setSeriesFilter(e.target.value)}
-          title="シリーズで絞り込み"
-        >
-          <option value="all">🎪 全シリーズ</option>
-          {allSeries.map(s => <option key={s} value={s}>{s}</option>)}
-          <option value="__none__">未分類のみ</option>
-        </select>
+        {!globalSeries && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={showUnclassifiedOnly}
+              onChange={e => setShowUnclassifiedOnly(e.target.checked)}
+            />
+            未分類のみ
+          </label>
+        )}
         <select
           className="sort-select"
           value={sortBy}

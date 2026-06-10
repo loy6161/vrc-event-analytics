@@ -1,5 +1,6 @@
 import { useState, useEffect, ReactNode } from 'react'
 import { WatcherStatus } from './WatcherStatus'
+import { useSeries } from '../contexts/SeriesContext'
 import '../styles/Layout.css'
 
 interface LayoutProps {
@@ -76,12 +77,31 @@ export function Sidebar() {
 }
 
 export function Header() {
+  const { series, setSeries, seriesList } = useSeries()
   return (
     <header className="header">
       <div className="header-left">
         <h1 className="header-title">VRChat Event Analytics</h1>
       </div>
       <div className="header-right">
+        {/* グローバルのシリーズ絞り込み。全ページ（ダッシュボード/レポート/インサイト/
+            ランキング/ユーザー/出演者/イベント一覧）がこの選択で再計算される */}
+        {seriesList.length > 0 && (
+          <select
+            value={series}
+            onChange={e => setSeries(e.target.value)}
+            title="シリーズで全ページを絞り込み"
+            style={{
+              padding: '6px 10px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              border: series ? '1.5px solid #6366f1' : '1px solid rgba(128,128,128,0.3)',
+              background: series ? 'rgba(99,102,241,0.08)' : 'transparent',
+              color: 'inherit', cursor: 'pointer', maxWidth: 200,
+            }}
+          >
+            <option value="">🎪 全イベント</option>
+            {seriesList.map(s => <option key={s} value={s}>🎪 {s}</option>)}
+          </select>
+        )}
         <WatcherStatus />
         <a href="#/settings" className="btn-icon" title="設定">⚙️</a>
       </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Event } from '../types/index.js'
+import { useSeries } from '../contexts/SeriesContext'
 import '../styles/EventForm.css'
 
 interface EventFormProps {
@@ -25,14 +26,8 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
     tags: '',
     series: '',
   })
-  const [seriesSuggestions, setSeriesSuggestions] = useState<string[]>([])
-
-  useEffect(() => {
-    fetch('/api/events/series/list')
-      .then(r => r.json())
-      .then(json => { if (json.success && Array.isArray(json.data)) setSeriesSuggestions(json.data) })
-      .catch(() => { /* サジェストは任意機能 */ })
-  }, [])
+  // シリーズのサジェストはグローバル（ヘッダーと共通）から取得。保存後は一覧を更新
+  const { seriesList: seriesSuggestions, refreshSeriesList } = useSeries()
 
   useEffect(() => {
     if (eventId) {
@@ -114,6 +109,7 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
 
       const data = await response.json()
       if (data.success) {
+        refreshSeriesList() // 新シリーズをヘッダーのセレクタに即反映
         setSuccess(eventId ? 'イベントを更新しました！' : 'イベントを作成しました！')
         setTimeout(() => {
           onSuccess?.()
