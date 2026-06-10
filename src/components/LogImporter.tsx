@@ -36,6 +36,8 @@ export function LogImporter() {
   const [importResults, setImportResults] = useState<ImportResult[]>([])
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  // 深夜の区切り時刻: 翌朝この時刻までは前日のイベントとしてまとめる（既定6時）
+  const [cutoffHour, setCutoffHour] = useState(6)
 
   useEffect(() => {
     loadImportHistory()
@@ -59,7 +61,7 @@ export function LogImporter() {
 
   const importSingleFile = async (file: File, force = false): Promise<ImportResult> => {
     // File オブジェクトを直接送信 — file.text() + JSON.stringify の二重メモリ確保を回避
-    const params = new URLSearchParams({ fileName: file.name })
+    const params = new URLSearchParams({ fileName: file.name, cutoffHour: String(cutoffHour) })
     if (force) params.set('force', 'true')
     const res = await fetch(`/api/logs/parse?${params}`, {
       method: 'POST',
@@ -206,6 +208,29 @@ export function LogImporter() {
       <div className="importer-header">
         <h2>📋 ログ取込</h2>
         <p>VRChatの出力ログファイルをインポートして、プレイヤーの出入場イベントを抽出。複数ファイルを一括でドロップできます。</p>
+      </div>
+
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        padding: '10px 14px', marginBottom: 12, borderRadius: 8,
+        background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+        fontSize: 13,
+      }}>
+        <span>🌙 深夜の区切り：翌朝</span>
+        <select
+          value={cutoffHour}
+          onChange={e => setCutoffHour(Number(e.target.value))}
+          disabled={isImporting}
+          style={{ padding: '4px 8px', borderRadius: 6 }}
+        >
+          {[3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(h => (
+            <option key={h} value={h}>{h}時</option>
+          ))}
+        </select>
+        <span>までは同じ日のイベントにまとめる</span>
+        <span style={{ opacity: 0.6, width: '100%' }}>
+          例：21時開始のライブ→打ち上げで翌2時まで遊んでも、1つのイベントにまとまります（日をまたいでもOK）
+        </span>
       </div>
 
       {error && (
