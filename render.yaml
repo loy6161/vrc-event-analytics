@@ -1,0 +1,20 @@
+# Render Blueprint — 無料プラン固定（カード不要 / 750時間/月 / 15分無アクセスでスリープ）
+# 重い処理はブラウザ側に移したため、無料Web Serviceで十分動く。
+# 課金される plan には絶対にしない（free のまま）。Turso の値はダッシュボードで設定する。
+services:
+  - type: web
+    name: vrc-event-analytics
+    runtime: node
+    plan: free
+    # buildCommand は devDeps(vite等)も入れてビルドする（NODE_ENV=production を build時に設定しないこと）
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # 値はダッシュボードで入力（シークレットなので sync:false）。値だけ入れる（変数名ごと貼らない）。
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      # PORT は Render が自動注入する。アプリは process.env.PORT で待受済み。
