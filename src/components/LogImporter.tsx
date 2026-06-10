@@ -37,6 +37,8 @@ export function LogImporter() {
   const [importResults, setImportResults] = useState<ImportResult[]>([])
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
   // 深夜の区切り時刻: 翌朝この時刻までは前日のイベントとしてまとめる（既定6時）
   const [cutoffHour, setCutoffHour] = useState(6)
   // メインのワールド名（部分一致・任意）。代表ワールド/イベント名に優先採用
@@ -162,6 +164,36 @@ export function LogImporter() {
       }
     }
     input.click()
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(`選択した${selectedIds.size}件のインポート記録を削除しますか？\n関連するプレイヤーイベントも削除されます。`)) return
+
+    setIsBulkDeleting(true)
+    const ids = Array.from(selectedIds)
+    let totalPlayerEvents = 0
+    let totalEvents = 0
+    for (const id of ids) {
+      try {
+        const res = await fetch(`/api/logs/${id}`, { method: 'DELETE' })
+        const json = await res.json()
+        if (json.success) {
+          totalPlayerEvents += json.data.playerEventsDeleted
+          totalEvents += json.data.eventsDeleted
+        }
+      } catch {
+        // 失敗分はスキップして続行
+      }
+    }
+    setSelectedIds(new Set())
+    await loadImportHistory()
+    setIsBulkDeleting(false)
+    setImportResults([{
+      fileName: `${ids.length}件`,
+      success: true,
+      message: `一括削除完了: プレイヤーイベント${totalPlayerEvents}件、自動作成イベント${totalEvents}件を削除`,
+    }])
   }
 
   const handleDeleteLog = async (log: ImportedLog) => {
@@ -348,7 +380,19 @@ export function LogImporter() {
 
       {/* Import History */}
       <div className="importer-history">
-        <h3>📚 インポート履歴</h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>📚 インポート履歴</h3>
+          {selectedIds.size > 0 && (
+            <button
+              className="btn btn-sm"
+              style={{ background: '#c0392b', color: '#fff', border: 'none', padding: '4px 12px', borderRadius: 6, cursor: 'pointer' }}
+              onClick={handleBulkDelete}
+              disabled={isBulkDeleting}
+            >
+              {isBulkDeleting ? '削除中...' : `選択した${selectedIds.size}件を削除`}
+            </button>
+          )}
+        </div>
         {importHistory.length === 0 ? (
           <div className="history-empty">
             <p>まだログがインポートされていません</p>
@@ -356,13 +400,37 @@ export function LogImporter() {
         ) : (
           <div className="history-table">
             <div className="history-header">
+              <div className="col-check">
+                <input
+                  type="checkbox"
+                  checked={importHistory.length > 0 && selectedIds.size === importHistory.length}
+                  ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < importHistory.length }}
+                  onChange={e => {
+                    if (e.target.checked) setSelectedIds(new Set(importHistory.map(l => l.id)))
+                    else setSelectedIds(new Set())
+                  }}
+                  title="全選択 / 全解除"
+                />
+              </div>
               <div className="col-name">ファイル名</div>
               <div className="col-date">インポート日時</div>
               <div className="col-count">イベント数</div>
               <div className="col-actions">操作</div>
             </div>
             {importHistory.map(log => (
-              <div key={log.id} className="history-row">
+              <div key={log.id} className={`history-row${selectedIds.has(log.id) ? ' selected' : ''}`}>
+                <div className="col-check">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(log.id)}
+                    onChange={e => {
+                      const next = new Set(selectedIds)
+                      if (e.target.checked) next.add(log.id)
+                      else next.delete(log.id)
+                      setSelectedIds(next)
+                    }}
+                  />
+                </div>
                 <div className="col-name">{log.file_name}</div>
                 <div className="col-date">
                   {new Date(log.imported_at).toLocaleDateString('ja-JP')}{' '}
@@ -375,7 +443,7 @@ export function LogImporter() {
                   <button
                     className="btn-delete-log"
                     onClick={() => handleDeleteLog(log)}
-                    disabled={deletingId === log.id}
+                    disabled={deletingId === log.id || isBulkDeleting}
                     title="このインポート記録と関連するイベントを削除"
                   >
                     {deletingId === log.id ? '...' : '✕'}
