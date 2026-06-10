@@ -30,6 +30,7 @@ export async function initializeDatabase(): Promise<void> {
       access_type TEXT,
       description TEXT,
       tags TEXT,
+      series TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -147,6 +148,14 @@ export async function initializeDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_chat_messages_time ON youtube_chat_messages(published_at);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_type ON youtube_chat_messages(message_type);
   `)
+
+  // ── Migrations for pre-existing databases ─────────────────────────
+  // CREATE TABLE IF NOT EXISTS は既存テーブルに列を足さないので、後付け列は ALTER で補う。
+  // 既に列がある場合は "duplicate column name" で失敗するだけなので握りつぶす。
+  try {
+    await db.execute('ALTER TABLE events ADD COLUMN series TEXT')
+  } catch { /* column already exists */ }
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_events_series ON events(series)')
 }
 
 export function closeDatabase(): void {

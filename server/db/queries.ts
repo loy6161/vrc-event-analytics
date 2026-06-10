@@ -32,6 +32,7 @@ function mapEvent(row: any): Event {
     access_type: row.access_type ?? undefined,
     description: row.description ?? undefined,
     tags: jsonToTags(row.tags),
+    series: row.series ?? undefined,
     created_at: row.created_at,
   }
 }
@@ -104,12 +105,13 @@ export interface CreateEventInput {
   access_type?: string
   description?: string
   tags?: string[]
+  series?: string
 }
 
 export async function createEvent(data: CreateEventInput): Promise<Event> {
   const result = await getDatabase().execute({
-    sql: `INSERT INTO events (name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO events (name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       data.name,
       data.date,
@@ -122,6 +124,7 @@ export async function createEvent(data: CreateEventInput): Promise<Event> {
       data.access_type ?? null,
       data.description ?? null,
       tagsToJson(data.tags),
+      data.series || null, // 空文字は未分類(null)として保存
     ],
   })
   return (await getEventById(Number(result.lastInsertRowid)))!
@@ -135,7 +138,7 @@ export async function updateEvent(id: number, data: Partial<CreateEventInput>): 
     sql: `UPDATE events SET
             name = ?, date = ?, start_time = ?, end_time = ?,
             world_id = ?, instance_id = ?, world_name = ?,
-            region = ?, access_type = ?, description = ?, tags = ?
+            region = ?, access_type = ?, description = ?, tags = ?, series = ?
           WHERE id = ?`,
     args: [
       data.name ?? existing.name,
@@ -149,10 +152,61 @@ export async function updateEvent(id: number, data: Partial<CreateEventInput>): 
       data.access_type ?? existing.access_type ?? null,
       data.description ?? existing.description ?? null,
       tagsToJson(data.tags ?? existing.tags),
+      // 空文字は「シリーズ解除」として null に正規化
+      (data.series ?? existing.series) || null,
       id,
     ],
   })
   return getEventById(id)
+}
+
+// ── Series ─────────────────────────────────────
+
+// 登録済みシリーズ名の一覧（サジェスト・フィルタ用）。新しいイベントで使われた順。
+export async function getDistinctSeries(): Promise<string[]> {
+  const result = await getDatabase().execute(
+    `SELECT series, MAX(date) as latest FROM events
+     WHERE series IS NOT NULL AND series != ''
+     GROUP BY series ORDER BY latest DESC`
+  )
+  return (result.rows as any[]).map(r => String(r.series))
+}
+
+// シリーズの自動推定。
+//  1. 同じ world_id の過去イベントに series が付いていれば再利用（同じ会場の再訪）
+//  2. ワールド名（空白除去・小文字化）に既知のシリーズ名が含まれていればそれ
+//     例: series "club VERSE" は「【毎週金曜定期ライブ】club VERSE ver1.3」にマッチ
+export async function inferSeries(worldId?: string, worldName?: string): Promise<string | null> {
+  const db = getDatabase()
+  if (worldId) {
+    const r = await db.execute({
+      sql: `SELECT series FROM events
+            WHERE world_id = ? AND series IS NOT NULL AND series != ''
+            ORDER BY date DESC LIMIT 1`,
+      args: [worldId],
+    })
+    if (r.rows[0]) return String((r.rows[0] as any).series)
+  }
+  if (worldName) {
+    const known = await getDistinctSeries()
+    const squash = (s: string) => s.toLowerCase().replace(/\s+/g, '')
+    const w = squash(worldName)
+    for (const s of known) {
+      if (w.includes(squash(s))) return s
+    }
+  }
+  return null
+}
+
+// 複数イベントへシリーズを一括設定（null で解除）
+export async function bulkSetSeries(eventIds: number[], series: string | null): Promise<number> {
+  if (eventIds.length === 0) return 0
+  const placeholders = eventIds.map(() => '?').join(',')
+  const result = await getDatabase().execute({
+    sql: `UPDATE events SET series = ? WHERE id IN (${placeholders})`,
+    args: [series, ...eventIds],
+  })
+  return result.rowsAffected
 }
 
 export async function deleteEvent(id: number): Promise<boolean> {

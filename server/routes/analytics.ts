@@ -539,10 +539,16 @@ async function computeDetailedStats(rawEvents: RawPlayerEvent[], eventId: number
   return { stay_distribution, arrival_timeline, departure_timeline, first_timer_count, returner_count, first_timer_rate: round3(first_timer_rate), early_leaver_count, early_leaver_rate: round3(early_leaver_rate), engagement_score, engagement_breakdown: { stay_score, retention_score, activity_score } }
 }
 
-async function computeInsights(): Promise<EventInsights> {
+async function computeInsights(series?: string): Promise<EventInsights> {
   const db = getDatabase()
 
-  const eventsResult = await db.execute('SELECT * FROM events ORDER BY date ASC, start_time ASC')
+  // series 指定時はそのシリーズのイベントだけで成長率・リテンション・コミュニティを計算する。
+  // 週次イベントの「前回からの継続率」は同シリーズ内で比較するほうが正確になる。
+  const eventsResult = await db.execute(
+    series
+      ? { sql: 'SELECT * FROM events WHERE series = ? ORDER BY date ASC, start_time ASC', args: [series] }
+      : 'SELECT * FROM events ORDER BY date ASC, start_time ASC'
+  )
   const events = eventsResult.rows as any[]
   if (events.length === 0) return emptyInsights()
 
@@ -712,9 +718,90 @@ router.get('/events/:id/detailed', async (req: Request, res: Response) => {
   } catch (err: any) { fail(res, err.message) }
 })
 
-router.get('/insights', async (_req: Request, res: Response) => {
+router.get('/insights', async (req: Request, res: Response) => {
   try {
-    ok(res, await computeInsights())
+    const series = typeof req.query.series === 'string' && req.query.series.trim() ? req.query.series.trim() : undefined
+    ok(res, await computeInsights(series))
+  } catch (err: any) { fail(res, err.message) }
+})
+
+// ── シリーズ比較 ───────────────────────────────────────────────────
+// シリーズ（clubVERSE / theALL / VERSARY...）ごとの集計を横並びで返す。
+// 未分類イベントは series='' として1グループにまとめる。
+export interface SeriesComparisonItem {
+  series: string            // '' = 未分類
+  event_count: number
+  first_date: string
+  last_date: string
+  avg_attendees: number     // 1回あたり平均ユニーク参加者
+  max_attendees: number
+  total_attendees: number   // 延べ（イベント×人）
+  unique_users: number      // シリーズ全体のユニーク参加者
+  repeat_rate: number       // シリーズ内で2回以上参加した人の割合
+}
+
+router.get('/series-comparison', async (_req: Request, res: Response) => {
+  try {
+    const db = getDatabase()
+    const events = (await db.execute('SELECT id, series, date FROM events')).rows as any[]
+    if (events.length === 0) return ok(res, [])
+
+    const joins = (await db.execute(
+      `SELECT pe.event_id, COALESCE(pe.user_id, pe.display_name) as key
+       FROM player_events pe
+       WHERE pe.event_type = 'join'
+         AND pe.display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)`
+    )).rows as any[]
+
+    // event_id → series ('' = 未分類)
+    const evSeries = new Map<number, string>()
+    const evDate = new Map<number, string>()
+    for (const e of events) {
+      evSeries.set(e.id as number, (e.series as string) ?? '')
+      evDate.set(e.id as number, e.date as string)
+    }
+
+    // series → { eventId → Set<userKey> }
+    const groups = new Map<string, Map<number, Set<string>>>()
+    for (const e of events) {
+      const s = (e.series as string) ?? ''
+      if (!groups.has(s)) groups.set(s, new Map())
+      groups.get(s)!.set(e.id as number, new Set())
+    }
+    for (const j of joins) {
+      const s = evSeries.get(j.event_id as number)
+      if (s === undefined) continue
+      groups.get(s)!.get(j.event_id as number)!.add(String(j.key))
+    }
+
+    const result: SeriesComparisonItem[] = []
+    for (const [s, perEvent] of groups) {
+      const eventIds = Array.from(perEvent.keys())
+      const dates = eventIds.map(id => evDate.get(id)!).sort()
+      const sizes = eventIds.map(id => perEvent.get(id)!.size)
+      const total = sizes.reduce((a, b) => a + b, 0)
+      const userEvents = new Map<string, number>()
+      for (const attendees of perEvent.values()) {
+        for (const k of attendees) userEvents.set(k, (userEvents.get(k) ?? 0) + 1)
+      }
+      let repeaters = 0
+      for (const c of userEvents.values()) if (c >= 2) repeaters++
+      result.push({
+        series: s,
+        event_count: eventIds.length,
+        first_date: dates[0] ?? '',
+        last_date: dates[dates.length - 1] ?? '',
+        avg_attendees: eventIds.length > 0 ? round1(total / eventIds.length) : 0,
+        max_attendees: sizes.length > 0 ? Math.max(...sizes) : 0,
+        total_attendees: total,
+        unique_users: userEvents.size,
+        repeat_rate: userEvents.size > 0 ? round3(repeaters / userEvents.size) : 0,
+      })
+    }
+
+    // イベント数の多い順、未分類は最後
+    result.sort((a, b) => (a.series === '' ? 1 : 0) - (b.series === '' ? 1 : 0) || b.event_count - a.event_count)
+    ok(res, result)
   } catch (err: any) { fail(res, err.message) }
 })
 

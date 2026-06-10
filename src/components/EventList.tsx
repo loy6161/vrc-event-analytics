@@ -13,12 +13,19 @@ export function EventList({ onSelect }: EventListProps) {
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [sortBy, setSortBy] = useState<'date' | 'name'>('date')
+  // シリーズフィルタ: 'all' | '__none__'（未分類） | シリーズ名
+  const [seriesFilter, setSeriesFilter] = useState('all')
 
   // 結合機能
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [showMergeDialog, setShowMergeDialog] = useState(false)
   const [mergeTargetId, setMergeTargetId] = useState<number | null>(null)
   const [merging, setMerging] = useState(false)
+
+  // シリーズ一括設定
+  const [showSeriesDialog, setShowSeriesDialog] = useState(false)
+  const [seriesInput, setSeriesInput] = useState('')
+  const [settingSeries, setSettingSeries] = useState(false)
 
   useEffect(() => { fetchEvents() }, [])
 
@@ -76,6 +83,32 @@ export function EventList({ onSelect }: EventListProps) {
     }
   }
 
+  const handleSetSeries = async () => {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    setSettingSeries(true)
+    try {
+      const res = await fetch('/api/events/bulk-series', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, series: seriesInput.trim() || null }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setShowSeriesDialog(false)
+        setSelectedIds(new Set())
+        dataCache.clear()
+        await fetchEvents(true)
+      } else {
+        setError(data.error)
+      }
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setSettingSeries(false)
+    }
+  }
+
   const handleMerge = async () => {
     if (!mergeTargetId) return
     const sourceIds = [...selectedIds].filter(id => id !== mergeTargetId)
@@ -101,10 +134,15 @@ export function EventList({ onSelect }: EventListProps) {
     }
   }
 
+  // 登録済みシリーズ（フィルタ選択肢用）
+  const allSeries = [...new Set(events.map(e => e.series).filter((s): s is string => !!s))].sort()
+
   let filtered = events.filter(e =>
     e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     e.date.includes(searchTerm)
   )
+  if (seriesFilter === '__none__') filtered = filtered.filter(e => !e.series)
+  else if (seriesFilter !== 'all') filtered = filtered.filter(e => e.series === seriesFilter)
 
   if (sortBy === 'name') {
     filtered = filtered.sort((a, b) => a.name.localeCompare(b.name))
@@ -148,6 +186,16 @@ export function EventList({ onSelect }: EventListProps) {
         />
         <select
           className="sort-select"
+          value={seriesFilter}
+          onChange={e => setSeriesFilter(e.target.value)}
+          title="シリーズで絞り込み"
+        >
+          <option value="all">🎪 全シリーズ</option>
+          {allSeries.map(s => <option key={s} value={s}>{s}</option>)}
+          <option value="__none__">未分類のみ</option>
+        </select>
+        <select
+          className="sort-select"
           value={sortBy}
           onChange={e => setSortBy(e.target.value as 'date' | 'name')}
         >
@@ -156,12 +204,26 @@ export function EventList({ onSelect }: EventListProps) {
         </select>
       </div>
 
-      {/* 結合ツールバー */}
-      {selectedIds.size >= 2 && (
+      {/* 選択時ツールバー（結合・シリーズ設定） */}
+      {selectedIds.size >= 1 && (
         <div className="merge-toolbar">
           <span className="merge-count">{selectedIds.size} 件選択中</span>
-          <button className="btn btn-merge" onClick={openMergeDialog}>
-            🔗 選択したイベントを結合
+          {selectedIds.size >= 2 && (
+            <button className="btn btn-merge" onClick={openMergeDialog}>
+              🔗 選択したイベントを結合
+            </button>
+          )}
+          <button
+            className="btn btn-merge"
+            onClick={() => {
+              // 選択中イベントの既存シリーズを初期値に（揃っていれば）
+              const sel = events.filter(e => selectedIds.has(e.id))
+              const uniq = [...new Set(sel.map(e => e.series ?? ''))]
+              setSeriesInput(uniq.length === 1 ? uniq[0] : '')
+              setShowSeriesDialog(true)
+            }}
+          >
+            🎪 シリーズを設定
           </button>
           <button className="btn-small" onClick={() => setSelectedIds(new Set())}>
             選択解除
@@ -209,6 +271,13 @@ export function EventList({ onSelect }: EventListProps) {
               </div>
               <div className="col-name">
                 <span className="event-name-text">{event.name}</span>
+                {event.series && (
+                  <span style={{
+                    marginLeft: 6, padding: '1px 8px', borderRadius: 10, fontSize: 11,
+                    background: 'rgba(99,102,241,0.18)', color: '#6366f1', fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                  }}>🎪 {event.series}</span>
+                )}
                 {event.start_time && (
                   <span className="event-start-badge">🕐 {event.start_time}</span>
                 )}
@@ -239,6 +308,47 @@ export function EventList({ onSelect }: EventListProps) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* シリーズ設定ダイアログ */}
+      {showSeriesDialog && (
+        <div className="merge-dialog-overlay" onClick={() => setShowSeriesDialog(false)}>
+          <div className="merge-dialog" onClick={e => e.stopPropagation()}>
+            <h3>🎪 シリーズを設定</h3>
+            <p className="merge-dialog-desc">
+              選択した {selectedIds.size} 件のイベントにシリーズ名を設定します。<br />
+              シリーズはイベントの分類（clubVERSE / theALL / VERSARY 等）で、シリーズ別の比較・統計に使われます。
+            </p>
+
+            <div className="merge-field">
+              <label>シリーズ名（空にすると未分類に戻ります）</label>
+              <input
+                value={seriesInput}
+                onChange={e => setSeriesInput(e.target.value)}
+                placeholder="例：clubVERSE"
+                list="series-dialog-suggestions"
+                className="search-input"
+                style={{ width: '100%' }}
+              />
+              <datalist id="series-dialog-suggestions">
+                {allSeries.map(s => <option key={s} value={s} />)}
+              </datalist>
+            </div>
+
+            <div className="merge-dialog-actions">
+              <button className="btn" onClick={() => setShowSeriesDialog(false)}>
+                キャンセル
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSetSeries}
+                disabled={settingSeries}
+              >
+                {settingSeries ? '設定中...' : seriesInput.trim() ? `「${seriesInput.trim()}」に設定` : '未分類に戻す'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

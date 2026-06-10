@@ -12,7 +12,21 @@ export interface Event {
   access_type?: string // public, invite, friends, friends+, invite+, group
   description?: string
   tags?: string[] // JSON配列を配列型に変換
+  series?: string // イベントシリーズ名（clubVERSE / theALL / VERSARY 等）。null=未分類
   created_at: string // ISO 8601
+}
+
+// シリーズ比較（/api/analytics/series-comparison）
+export interface SeriesComparison {
+  series: string            // '' = 未分類
+  event_count: number
+  first_date: string
+  last_date: string
+  avg_attendees: number
+  max_attendees: number
+  total_attendees: number
+  unique_users: number
+  repeat_rate: number
 }
 
 // VRChatプレイヤーイベント
