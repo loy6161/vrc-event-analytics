@@ -166,10 +166,12 @@ export function LogImporter() {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
+      // 大きいファイルは処理中に表示を更新して待てるようにする
+      const sizeMB = file.size / 1024 / 1024
       setImportProgress(
         files.length === 1
-          ? `${file.name} を処理中...`
-          : `(${i + 1}/${files.length}) ${file.name} を処理中...`
+          ? `${file.name}（${sizeMB.toFixed(1)} MB）を処理中...${sizeMB > 30 ? ' ⏳ 大きいファイルです。しばらくお待ちください' : ''}`
+          : `(${i + 1}/${files.length}) ${file.name}（${sizeMB.toFixed(1)} MB）を処理中...${sizeMB > 30 ? ' ⏳' : ''}`
       )
       try {
         const result = await importSingleFile(file, force)

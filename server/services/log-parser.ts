@@ -268,7 +268,6 @@ export function parseLogContent(content: string, fileName: string): LogFileParse
   }
 
   const fileHash = hashFileContent(content)
-  const lines = content.split(/\r?\n/)
 
   const events: ParsedLogEvent[] = []
   const playerEvents: ParsedPlayerEvent[] = []
@@ -276,7 +275,20 @@ export function parseLogContent(content: string, fileName: string): LogFileParse
   const instanceEvents: ParsedInstanceEvent[] = []
   const uniquePlayers = new Set<string>()
 
-  for (const line of lines) {
+  // content.split(/\r?\n/) は全行を配列に展開するため、大きいファイルで
+  // ピークメモリが2倍になりプロセスが落ちることがある。
+  // indexOf('\n', pos) で1行ずつ取り出すことで中間配列を作らず処理する。
+  let totalLines = 0
+  let pos = 0
+  while (pos <= content.length) {
+    const nl = content.indexOf('\n', pos)
+    const end = nl === -1 ? content.length : nl
+    // \r\n 対応: 行末の \r を除去
+    const lineEnd = end > pos && content[end - 1] === '\r' ? end - 1 : end
+    const line = content.slice(pos, lineEnd)
+    pos = end + 1
+    totalLines++
+
     const event = parseLine(line)
     if (!event) continue
 
@@ -297,7 +309,7 @@ export function parseLogContent(content: string, fileName: string): LogFileParse
     }
   }
 
-  // Compute time range from all parsed events
+  // Compute time range from all parsed events (sort only the small events array, not all lines)
   let timeRange: { start: string; end: string } | null = null
   if (events.length > 0) {
     const timestamps = events.map(e => e.timestamp).sort()
@@ -315,7 +327,7 @@ export function parseLogContent(content: string, fileName: string): LogFileParse
     worldEvents,
     instanceEvents,
     summary: {
-      totalLines: lines.length,
+      totalLines,
       parsedEvents: events.length,
       joinCount: playerEvents.filter(e => e.type === 'join').length,
       leaveCount: playerEvents.filter(e => e.type === 'leave').length,
