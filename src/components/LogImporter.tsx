@@ -100,10 +100,23 @@ export function LogImporter() {
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       body: file,
     })
-    const json = await res.json()
+
+    // レスポンスが JSON でないケース（Railwayのプロキシエラーなど）にも対応
+    let json: any
+    const rawText = await res.text()
+    try {
+      json = JSON.parse(rawText)
+    } catch {
+      return {
+        fileName: file.name, success: false,
+        message: `HTTP ${res.status}: ${rawText.slice(0, 200)}`,
+      }
+    }
 
     if (!json.success) {
-      return { fileName: file.name, success: false, message: json.error ?? 'Import failed' }
+      // Railway のプロキシエラーは {status:"error", code:502, message:"..."} 形式
+      const msg = json.error ?? json.message ?? `HTTP ${res.status}: サーバーエラー`
+      return { fileName: file.name, success: false, message: msg }
     }
 
     const data = json.data
