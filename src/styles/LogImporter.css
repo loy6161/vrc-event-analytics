@@ -274,7 +274,7 @@
 
 .history-header {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 1fr auto;
+  grid-template-columns: 28px 2fr 1.5fr 1fr auto;
   gap: 12px;
   background: var(--color-surface-alt);
   padding: 10px 16px;
@@ -288,12 +288,29 @@
 
 .history-row {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 1fr auto;
+  grid-template-columns: 28px 2fr 1.5fr 1fr auto;
   gap: 12px;
   padding: 11px 16px;
   border-bottom: 1px solid var(--color-border-light);
   align-items: center;
   transition: background 0.12s;
+}
+
+.history-row.selected {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.col-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.col-check input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
 }
 
 .history-row:last-child {
@@ -387,7 +404,7 @@
   }
 
   .history-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: 28px 1fr;
     gap: 6px;
     border-left: 3px solid var(--color-primary);
     padding: 12px;
@@ -395,6 +412,10 @@
     margin-bottom: 8px;
     border-radius: var(--radius-sm);
     border-bottom: none;
+  }
+
+  .col-name, .col-date, .col-count, .col-actions {
+    grid-column: 2;
   }
 
   .col-date,
