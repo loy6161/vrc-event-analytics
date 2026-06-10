@@ -13,6 +13,7 @@ import { createColumnHelper } from '@tanstack/react-table'
 import { DataTable } from './DataTable'
 import type { UserRankingItem, PeriodStats } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
+import { useSeries } from '../contexts/SeriesContext'
 import '../styles/RankingPage.css'
 
 // ─────────────────────────────────────────────
@@ -141,19 +142,23 @@ export function RankingPage() {
   const [selectedYear, setSelectedYear] = useState<string>('all')
   const [availableYears, setAvailableYears] = useState<string[]>([])
 
+  const { series } = useSeries()
+
   // Load available years from periods endpoint
   useEffect(() => {
-    const cached = dataCache.get<PeriodStats[]>('periods')
+    const key = `periods:${series}`
+    const cached = dataCache.get<PeriodStats[]>(key)
     if (cached) {
       const years = [...new Set(cached.map(p => p.period.slice(0, 4)))].sort().reverse()
       setAvailableYears(years as string[])
       return
     }
-    fetch('/api/analytics/periods')
+    const url = series ? `/api/analytics/periods?series=${encodeURIComponent(series)}` : '/api/analytics/periods'
+    fetch(url)
       .then(r => r.json())
       .then(res => {
         if (res.success) {
-          dataCache.set('periods', res.data)
+          dataCache.set(key, res.data)
           const years = [
             ...new Set((res.data as PeriodStats[]).map(p => p.period.slice(0, 4))),
           ].sort().reverse()
@@ -161,13 +166,19 @@ export function RankingPage() {
         }
       })
       .catch(() => {})
-  }, [])
+  }, [series])
 
-  // Fetch rankings whenever sort or period changes
-  useEffect(() => {
+  const buildParams = () => {
     const params = new URLSearchParams()
     params.set('sort', sortBy)
     if (selectedYear !== 'all') params.set('period', selectedYear)
+    if (series) params.set('series', series)
+    return params
+  }
+
+  // Fetch rankings whenever sort, period, or series changes
+  useEffect(() => {
+    const params = buildParams()
     const cacheKey = `rankings:${params}`
 
     const cached = dataCache.get<UserRankingItem[]>(cacheKey)
@@ -183,13 +194,11 @@ export function RankingPage() {
       })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
-  }, [sortBy, selectedYear])
+  }, [sortBy, selectedYear, series])
 
   const refresh = () => {
     dataCache.deletePrefix('rankings:')
-    const params = new URLSearchParams()
-    params.set('sort', sortBy)
-    if (selectedYear !== 'all') params.set('period', selectedYear)
+    const params = buildParams()
     setLoading(true)
     setError(null)
     fetch(`/api/analytics/rankings?${params}`)

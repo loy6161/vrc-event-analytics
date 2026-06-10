@@ -3,6 +3,7 @@ import { createColumnHelper } from '@tanstack/react-table'
 import { DataTable } from './DataTable'
 import type { User } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
+import { useSeries } from '../contexts/SeriesContext'
 import '../styles/UserTable.css'
 
 interface UserWithStats extends User {
@@ -151,8 +152,11 @@ export function UserTable({ onSelectUser }: UserTableProps) {
     setStayMinHours(''); setStayMaxHours('')
   }
 
+  const { series } = useSeries()
+
   const loadUsers = async (from?: string, to?: string, force = false) => {
-    const cacheKey = from || to ? `users:${from ?? ''}:${to ?? ''}` : 'users-all'
+    // series 指定時は参加回数・滞在時間などの統計がそのシリーズ内だけで再計算される
+    const cacheKey = `users:${series}:${from ?? ''}:${to ?? ''}`
     const cached = dataCache.get<UserWithStats[]>(cacheKey)
     if (cached && !force) {
       setAllUsers(cached)
@@ -165,6 +169,7 @@ export function UserTable({ onSelectUser }: UserTableProps) {
       const params = new URLSearchParams()
       if (from) params.set('from', from)
       if (to) params.set('to', to)
+      if (series) params.set('series', series)
       const url = `/api/users${params.toString() ? '?' + params.toString() : ''}`
       const res = await fetch(url)
       const data = await res.json()
@@ -187,12 +192,10 @@ export function UserTable({ onSelectUser }: UserTableProps) {
     loadUsers(periodStart || undefined, periodEnd || undefined, true)
   }
 
-  useEffect(() => { loadUsers() }, [])
-
-  // 期間が変わったらサーバーから再取得（統計値も期間内で再計算）
+  // 期間・シリーズが変わったらサーバーから再取得（統計値も絞り込み内で再計算）
   useEffect(() => {
     loadUsers(periodStart || undefined, periodEnd || undefined)
-  }, [periodStart, periodEnd])
+  }, [periodStart, periodEnd, series])
 
   useEffect(() => {
     let filtered = allUsers

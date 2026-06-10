@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { PeriodStats } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
+import { useSeries } from '../contexts/SeriesContext'
 import '../styles/Dashboard.css'
 
 // ─────────────────────────────────────────────
@@ -137,36 +138,40 @@ export function Dashboard() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [prepAlerts, setPrepAlerts] = useState<PrepCitizenAlert[]>([])
+  const { series } = useSeries()
 
   const loadDashboard = async (force = false) => {
-    const cached = dataCache.get<DashboardData>('dashboard')
+    const key = `dashboard:${series}`
+    const cached = dataCache.get<DashboardData>(key)
     if (cached && !force) { setData(cached); setLoading(false); return }
     try {
-      const res = await fetch('/api/analytics/dashboard').then(r => r.json())
-      if (res.success) { dataCache.set('dashboard', res.data); setData(res.data) }
+      const url = series ? `/api/analytics/dashboard?series=${encodeURIComponent(series)}` : '/api/analytics/dashboard'
+      const res = await fetch(url).then(r => r.json())
+      if (res.success) { dataCache.set(key, res.data); setData(res.data) }
       else setError(res.error ?? 'Failed to load dashboard')
     } catch (err: any) { setError(err.message) }
     finally { setLoading(false); setRefreshing(false) }
   }
 
   const loadAlerts = async (force = false) => {
-    const cached = dataCache.get<any[]>('users-all')
+    // 準市民アラートはシリーズに関係なく全体で判定する
+    const cached = dataCache.get<any[]>('users-all:')
     if (cached && !force) { setPrepAlerts(computeAlerts(cached)); return }
     try {
       const res = await fetch('/api/users').then(r => r.json())
-      if (res.success) { dataCache.set('users-all', res.data); setPrepAlerts(computeAlerts(res.data)) }
+      if (res.success) { dataCache.set('users-all:', res.data); setPrepAlerts(computeAlerts(res.data)) }
     } catch { /* non-critical */ }
   }
 
   const refresh = () => {
-    dataCache.delete('dashboard')
-    dataCache.delete('users-all')
+    dataCache.deletePrefix('dashboard:')
+    dataCache.delete('users-all:')
     setRefreshing(true)
     loadDashboard(true)
     loadAlerts(true)
   }
 
-  useEffect(() => { loadDashboard(); loadAlerts() }, [])
+  useEffect(() => { setLoading(true); loadDashboard(); loadAlerts() }, [series])
 
   if (loading) {
     return (

@@ -4,6 +4,7 @@ import { AttendanceTrendChart } from './charts/AttendanceTrendChart'
 import { EventTrendChart } from './charts/EventTrendChart'
 import type { EventInsights, SeriesComparison } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
+import { useSeries } from '../contexts/SeriesContext'
 import '../styles/Charts.css'
 import '../styles/InsightsPage.css'
 
@@ -255,9 +256,9 @@ export function InsightsPage() {
   const [panelOrder, setPanelOrder] = useState<string[]>(loadOrder)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
-  // シリーズ絞り込み（'' = 全イベント）。絞ると成長率/リテンションもそのシリーズ内だけで計算される
-  const [seriesFilter, setSeriesFilter] = useState('')
-  const [seriesList, setSeriesList] = useState<string[]>([])
+  // シリーズ絞り込みはヘッダーのグローバルセレクタと連動（'' = 全イベント）。
+  // 絞ると成長率/リテンションもそのシリーズ内だけで計算される
+  const { series: seriesFilter, setSeries: setSeriesFilter } = useSeries()
   const [comparison, setComparison] = useState<SeriesComparison[]>([])
 
   const load = async (force = false) => {
@@ -293,13 +294,7 @@ export function InsightsPage() {
   }
 
   useEffect(() => { setLoading(true); load() }, [seriesFilter])
-  useEffect(() => {
-    loadComparison()
-    fetch('/api/events/series/list')
-      .then(r => r.json())
-      .then(json => { if (json.success && Array.isArray(json.data)) setSeriesList(json.data) })
-      .catch(() => { /* フィルタは任意機能 */ })
-  }, [])
+  useEffect(() => { loadComparison() }, [])
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.effectAllowed = 'move'
@@ -394,17 +389,6 @@ export function InsightsPage() {
           <p>データに基づくイベント改善アドバイス</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {seriesList.length > 0 && (
-            <select
-              value={seriesFilter}
-              onChange={e => setSeriesFilter(e.target.value)}
-              style={{ padding: '6px 10px', borderRadius: 8, fontSize: 13 }}
-              title="シリーズで絞り込み（成長率・リテンションもシリーズ内で計算）"
-            >
-              <option value="">🎪 全イベント</option>
-              {seriesList.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          )}
           <div className="insights-trend-badge">
             <span className="trend-icon">{trendIcon(insights.growth_trend)}</span>
             <span className="trend-label">{trendLabel(insights.growth_trend)}</span>

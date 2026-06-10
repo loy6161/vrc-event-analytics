@@ -4,6 +4,7 @@ import { PeriodTrendChart } from './charts/PeriodTrendChart'
 import { DataTable } from './DataTable'
 import type { PeriodStats } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
+import { useSeries } from '../contexts/SeriesContext'
 import '../styles/Charts.css'
 import '../styles/ReportsPage.css'
 
@@ -127,9 +128,11 @@ export function ReportsPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedYear, setSelectedYear] = useState<string>('all')
+  const { series } = useSeries()
 
   const load = async (force = false) => {
-    const cached = dataCache.get<PeriodStats[]>('periods')
+    const key = `periods:${series}`
+    const cached = dataCache.get<PeriodStats[]>(key)
     if (cached && !force) {
       setAllPeriods(cached)
       if (selectedYear === 'all' && cached.length > 0) setSelectedYear(cached[cached.length - 1].period.slice(0, 4))
@@ -137,9 +140,10 @@ export function ReportsPage() {
       return
     }
     try {
-      const res = await fetch('/api/analytics/periods').then(r => r.json())
+      const url = series ? `/api/analytics/periods?series=${encodeURIComponent(series)}` : '/api/analytics/periods'
+      const res = await fetch(url).then(r => r.json())
       if (res.success) {
-        dataCache.set('periods', res.data)
+        dataCache.set(key, res.data)
         setAllPeriods(res.data)
         if (res.data.length > 0) setSelectedYear(res.data[res.data.length - 1].period.slice(0, 4))
       } else {
@@ -149,9 +153,9 @@ export function ReportsPage() {
     finally { setLoading(false); setRefreshing(false) }
   }
 
-  const refresh = () => { dataCache.delete('periods'); setRefreshing(true); load(true) }
+  const refresh = () => { dataCache.deletePrefix('periods:'); setRefreshing(true); load(true) }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { setLoading(true); load() }, [series])
 
   // Extract unique years
   const availableYears = useMemo(() => {

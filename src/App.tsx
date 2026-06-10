@@ -15,6 +15,7 @@ import { LogImporter } from './components/LogImporter'
 import { HelpPage } from './components/HelpPage'
 import { PerformersPage } from './components/PerformersPage'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { SeriesProvider } from './contexts/SeriesContext'
 import { Event } from './types/index.js'
 import './App.css'
 
@@ -208,11 +209,13 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <Layout>
-        <ErrorBoundary>
-          {renderPage()}
-        </ErrorBoundary>
-      </Layout>
+      <SeriesProvider>
+        <Layout>
+          <ErrorBoundary>
+            {renderPage()}
+          </ErrorBoundary>
+        </Layout>
+      </SeriesProvider>
     </ErrorBoundary>
   )
 }
