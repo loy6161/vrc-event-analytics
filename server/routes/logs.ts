@@ -31,6 +31,108 @@ import {
 
 const router = Router()
 
+// ── Shared DB save logic ──────────────────────────────────────────
+// Used by both /parse (server-side parsing) and /import-parsed (client-side parsing).
+// Takes segmented world sessions + file metadata, runs find-or-create per logical day,
+// inserts player_events, upserts users, records display name history.
+
+interface SaveSessionsResult {
+  createdEvents: { id: number; name: string; date: string; worldName?: string; merged?: boolean }[]
+  totalInserted: number
+  usersUpserted: number
+}
+
+async function saveSessionsToDB(
+  sessions: WorldSession[],
+  fileName: string,
+  cutoffHour: number,
+  mainWorld: string,
+): Promise<SaveSessionsResult> {
+  const norm = (s?: string) => (s ?? '').toLowerCase()
+  const matchesMain = (name?: string) => !!mainWorld && norm(name).includes(norm(mainWorld))
+  const uniqueCount = (s: WorldSession) => new Set(s.playerEvents.map(e => e.displayName)).size
+
+  const byDay = new Map<string, WorldSession[]>()
+  for (const session of sessions) {
+    if (session.playerEvents.length === 0) continue
+    const day = logicalDate(session.startTime, cutoffHour)
+    if (!byDay.has(day)) byDay.set(day, [])
+    byDay.get(day)!.push(session)
+  }
+
+  const createdEvents: SaveSessionsResult['createdEvents'] = []
+  let totalInserted = 0
+
+  for (const [day, daySessions] of byDay) {
+    const dayPlayerEvents = daySessions.flatMap(s => s.playerEvents)
+    const named = daySessions.filter(s => s.worldName)
+    const rep =
+      named.find(s => matchesMain(s.worldName)) ??
+      [...named].sort((a, b) => uniqueCount(b) - uniqueCount(a))[0] ??
+      daySessions[0]
+    const worldCount = new Set(daySessions.map(s => s.worldId).filter(Boolean)).size
+    const startTime = daySessions[0].startTime.slice(11, 16)
+    const endTime = daySessions[daySessions.length - 1].endTime.slice(11, 16)
+    const eventName = rep.worldName
+      ? (worldCount > 1
+          ? `${rep.worldName} 他${worldCount - 1}ワールド (${day})`
+          : `${rep.worldName} (${day})`)
+      : `イベント ${day}`
+
+    let target = await findEventByDate(day)
+    let merged = false
+    if (target) {
+      merged = true
+      if (matchesMain(rep.worldName) && !matchesMain(target.world_name)) {
+        target = (await updateEvent(target.id, {
+          name: eventName, world_id: rep.worldId, world_name: rep.worldName,
+          instance_id: rep.instanceId, region: rep.region, access_type: rep.accessType,
+        }))!
+      }
+    } else {
+      target = await createEvent({
+        name: eventName, date: day, start_time: startTime, end_time: endTime,
+        world_id: rep.worldId, world_name: rep.worldName,
+        instance_id: rep.instanceId, region: rep.region, access_type: rep.accessType,
+      })
+    }
+
+    createdEvents.push({ id: target.id, name: target.name, date: target.date, worldName: target.world_name, merged })
+
+    const insertInputs: InsertPlayerEventInput[] = dayPlayerEvents.map(pe => ({
+      event_id: target!.id,
+      user_id: (pe as any).userId ?? undefined,
+      display_name: pe.displayName,
+      event_type: pe.type,
+      timestamp: pe.timestamp,
+      log_file: fileName,
+    }))
+    totalInserted += await insertPlayerEventsBatch(insertInputs)
+    await recomputeEventTimespan(target!.id)
+  }
+
+  // Collect unique players
+  const allPlayerEvents = sessions.flatMap(s => s.playerEvents)
+  const playerMap = new Map<string, { userId?: string; displayName: string; firstSeen: string }>()
+  for (const pe of allPlayerEvents) {
+    const key = (pe as any).userId ?? pe.displayName
+    if (!playerMap.has(key)) {
+      playerMap.set(key, { userId: (pe as any).userId, displayName: pe.displayName, firstSeen: pe.timestamp })
+    }
+  }
+  const userInputs: UpsertUserInput[] = Array.from(playerMap.values()).map(p => ({
+    user_id: p.userId, display_name: p.displayName, first_seen: p.firstSeen,
+  }))
+  await upsertUsersBatch(userInputs)
+
+  const now = new Date().toISOString()
+  await recordDisplayNameHistoryBatch(
+    userInputs.map(({ user_id, display_name }) => ({ user_id: user_id ?? null, display_name, seen_at: now }))
+  )
+
+  return { createdEvents, totalInserted, usersUpserted: userInputs.length }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────
 
 function ok<T>(res: Response, data: T, status = 200) {
@@ -226,129 +328,31 @@ router.post(
       await recomputeEventTimespan(event.id)
     }
   } else {
-    // ── No event specified: 論理的な「1日」ごとに find-or-create で1イベントに集約 ──
-    // ・cutoffHour(既定6時)までは前日扱い（深夜の打ち上げ対応）
-    // ・同じ論理日は既存イベントに結合（ログファイルが分かれても1夜=1イベント）
-    // ・代表ワールド = mainWorld 部分一致 優先 → 次に参加者最多のワールド（自宅ワールドを避ける）
-    const norm = (s?: string) => (s ?? '').toLowerCase()
-    const matchesMain = (name?: string) => !!mainWorld && norm(name).includes(norm(mainWorld))
-    const uniqueCount = (s: WorldSession) => new Set(s.playerEvents.map(e => e.displayName)).size
+    const saved = await saveSessionsToDB(allSessions, parsed.fileName, cutoffHour, mainWorld)
+    createdEvents.push(...saved.createdEvents)
+    totalInserted = saved.totalInserted
+    // userInputs length は saved.usersUpserted で返す
+    const userInputsLen = saved.usersUpserted
 
-    const byDay = new Map<string, WorldSession[]>()
-    for (const session of allSessions) {
-      if (session.playerEvents.length === 0) continue
-      const day = logicalDate(session.startTime, cutoffHour)
-      if (!byDay.has(day)) byDay.set(day, [])
-      byDay.get(day)!.push(session)
-    }
+    // ── Mark log as imported ────────────────────────────────────
+    await recordImportedLog(parsed.fileName, parsed.fileHash, totalInserted)
 
-    for (const [day, sessions] of byDay) {
-      const dayPlayerEvents = sessions.flatMap(s => s.playerEvents)
-      const named = sessions.filter(s => s.worldName)
-      const rep =
-        named.find(s => matchesMain(s.worldName)) ??                       // 1. メイン指定に一致
-        [...named].sort((a, b) => uniqueCount(b) - uniqueCount(a))[0] ??   // 2. 参加者最多（自宅回避）
-        sessions[0]                                                        // 3. fallback
-      const worldCount = new Set(sessions.map(s => s.worldId).filter(Boolean)).size
-      const startTime = sessions[0].startTime.slice(11, 16)
-      const endTime = sessions[sessions.length - 1].endTime.slice(11, 16)
-      const eventName = rep.worldName
-        ? (worldCount > 1
-            ? `${rep.worldName} 他${worldCount - 1}ワールド (${day})`
-            : `${rep.worldName} (${day})`)
-        : `イベント ${day}`
-
-      // 同じ論理日の既存イベントへ結合。無ければ新規作成。
-      let target = await findEventByDate(day)
-      let merged = false
-      if (target) {
-        merged = true
-        // 代表が mainWorld 一致で既存がまだ未一致なら、名前/ワールドを昇格
-        if (matchesMain(rep.worldName) && !matchesMain(target.world_name)) {
-          target = (await updateEvent(target.id, {
-            name: eventName,
-            world_id: rep.worldId,
-            world_name: rep.worldName,
-            instance_id: rep.instanceId,
-            region: rep.region,
-            access_type: rep.accessType,
-          }))!
-        }
-      } else {
-        target = await createEvent({
-          name: eventName,
-          date: day,
-          start_time: startTime,
-          end_time: endTime,
-          world_id: rep.worldId,
-          world_name: rep.worldName,
-          instance_id: rep.instanceId,
-          region: rep.region,
-          access_type: rep.accessType,
-        })
-      }
-
-      createdEvents.push({
-        id: target.id,
-        name: target.name,
-        date: target.date,
-        worldName: target.world_name,
-        merged,
-      })
-
-      // その日の全セッションのプレイヤーイベントを同じイベントに紐付け（UNIQUE制約で重複排除）
-      const insertInputs: InsertPlayerEventInput[] = dayPlayerEvents.map(pe => ({
-        event_id: target!.id,
-        user_id: pe.userId,
-        display_name: pe.displayName,
-        event_type: pe.type,
-        timestamp: pe.timestamp,
-        log_file: parsed.fileName,
-      }))
-      totalInserted += await insertPlayerEventsBatch(insertInputs)
-      // 開始/終了時刻を実データ（最早Join〜最遅Leave）から再計算。
-      // 結合で後続ファイルが入っても夜全体の範囲に広がる。
-      await recomputeEventTimespan(target!.id)
-    }
+    ok(res, {
+      alreadyImported: false,
+      fileName: parsed.fileName,
+      fileHash: parsed.fileHash,
+      eventId: parsedEventId,
+      sessionsFound: allSessions.length,
+      createdEvents,
+      playerEventsInserted: totalInserted,
+      usersUpserted: userInputsLen,
+      logSummary: parsed.summary,
+    })
+    return
   }
 
-  // ── Collect unique players for user upsert ────────────────────
-  const allPlayerEvents: ParsedPlayerEvent[] = allSessions.flatMap(s => s.playerEvents)
-  const playerMap = new Map<string, { userId?: string; displayName: string; firstSeen: string }>()
-
-  for (const pe of allPlayerEvents) {
-    const key = pe.userId ?? pe.displayName
-    if (!playerMap.has(key)) {
-      playerMap.set(key, {
-        userId: pe.userId,
-        displayName: pe.displayName,
-        firstSeen: pe.timestamp,
-      })
-    }
-  }
-
-  const userInputs: UpsertUserInput[] = Array.from(playerMap.values()).map(p => ({
-    user_id: p.userId,
-    display_name: p.displayName,
-    first_seen: p.firstSeen,
-  }))
-
-  await upsertUsersBatch(userInputs)
-
-  // Record display name history for each unique player
-  const now = new Date().toISOString()
-  await recordDisplayNameHistoryBatch(
-    userInputs.map(({ user_id, display_name }) => ({
-      user_id: user_id ?? null,
-      display_name,
-      seen_at: now,
-    }))
-  )
-
-  // ── Mark log as imported ──────────────────────────────────────
+  // ── existing-event path: record import and return ─────────────
   await recordImportedLog(parsed.fileName, parsed.fileHash, totalInserted)
-
-  // ── Return summary ────────────────────────────────────────────
   ok(res, {
     alreadyImported: false,
     fileName: parsed.fileName,
@@ -357,9 +361,57 @@ router.post(
     sessionsFound: allSessions.length,
     createdEvents,
     playerEventsInserted: totalInserted,
-    usersUpserted: userInputs.length,
+    usersUpserted: 0,
     logSummary: parsed.summary,
   })
+  } catch (err: any) {
+    return fail(res, `ログ取り込み中にエラー: ${err?.message ?? String(err)}`)
+  }
+})
+
+/**
+ * POST /api/logs/import-parsed
+ *
+ * ブラウザ側で解析済みのセッションデータを受け取って保存する。
+ * 生ログ（数十〜数百MB）をサーバーに送らないので、Railway のメモリ上限に
+ * かからない。送信されるのは抽出済みの Join/Leave とワールド情報のみ（数百KB程度）。
+ *
+ * body (application/json):
+ *   fileName   - 元のログファイル名
+ *   fileHash   - 生ログ内容の SHA-256（重複取込チェック用。サーバー解析時と同一の計算方法）
+ *   sessions   - WorldSession[]（ブラウザの logParser.ts が生成）
+ *   cutoffHour - 深夜の区切り（既定6）
+ *   mainWorld  - メインのワールド名（部分一致・任意）
+ *   force      - 重複チェックをスキップ
+ */
+router.post('/import-parsed', async (req: Request, res: Response) => {
+  const { fileName, fileHash, sessions, force } = req.body ?? {}
+
+  if (typeof fileName !== 'string' || !fileName) return fail(res, 'fileName is required', 400)
+  if (typeof fileHash !== 'string' || !/^[a-f0-9]{64}$/.test(fileHash)) return fail(res, 'fileHash must be a SHA-256 hex string', 400)
+  if (!Array.isArray(sessions)) return fail(res, 'sessions array is required', 400)
+
+  let cutoffHour = req.body?.cutoffHour != null ? parseInt(String(req.body.cutoffHour), 10) : 6
+  if (isNaN(cutoffHour) || cutoffHour < 0 || cutoffHour > 12) cutoffHour = 6
+  const mainWorld = typeof req.body?.mainWorld === 'string' ? req.body.mainWorld.trim() : ''
+
+  try {
+    if (!force && await isLogImported(fileHash)) {
+      return ok(res, { alreadyImported: true, fileName, fileHash })
+    }
+
+    const saved = await saveSessionsToDB(sessions as WorldSession[], fileName, cutoffHour, mainWorld)
+    await recordImportedLog(fileName, fileHash, saved.totalInserted)
+
+    ok(res, {
+      alreadyImported: false,
+      fileName,
+      fileHash,
+      sessionsFound: sessions.length,
+      createdEvents: saved.createdEvents,
+      playerEventsInserted: saved.totalInserted,
+      usersUpserted: saved.usersUpserted,
+    })
   } catch (err: any) {
     return fail(res, `ログ取り込み中にエラー: ${err?.message ?? String(err)}`)
   }
