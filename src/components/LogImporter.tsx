@@ -14,6 +14,7 @@ interface CreatedEvent {
   name: string
   date: string
   worldName?: string
+  merged?: boolean
 }
 
 interface ImportResult {
@@ -38,6 +39,8 @@ export function LogImporter() {
   const [deletingId, setDeletingId] = useState<number | null>(null)
   // 深夜の区切り時刻: 翌朝この時刻までは前日のイベントとしてまとめる（既定6時）
   const [cutoffHour, setCutoffHour] = useState(6)
+  // メインのワールド名（部分一致・任意）。代表ワールド/イベント名に優先採用
+  const [mainWorld, setMainWorld] = useState('')
 
   useEffect(() => {
     loadImportHistory()
@@ -62,6 +65,7 @@ export function LogImporter() {
   const importSingleFile = async (file: File, force = false): Promise<ImportResult> => {
     // File オブジェクトを直接送信 — file.text() + JSON.stringify の二重メモリ確保を回避
     const params = new URLSearchParams({ fileName: file.name, cutoffHour: String(cutoffHour) })
+    if (mainWorld.trim()) params.set('mainWorld', mainWorld.trim())
     if (force) params.set('force', 'true')
     const res = await fetch(`/api/logs/parse?${params}`, {
       method: 'POST',
@@ -85,12 +89,18 @@ export function LogImporter() {
       }
     }
 
-    const created = data.createdEvents || []
+    const created: CreatedEvent[] = data.createdEvents || []
     const eventCount = data.playerEventsInserted || 0
     const users = data.usersUpserted || 0
     const sessions = data.sessionsFound || 0
-    const msg = created.length > 0
-      ? `${created.length}件のイベントを自動作成、${eventCount}件のJoin/Leaveを記録、${users}名を登録`
+    const newCount = created.filter(e => !e.merged).length
+    const mergedCount = created.filter(e => e.merged).length
+    const evtMsg = [
+      newCount > 0 ? `${newCount}件のイベントを作成` : '',
+      mergedCount > 0 ? `${mergedCount}件を既存イベントに結合` : '',
+    ].filter(Boolean).join('・')
+    const msg = evtMsg
+      ? `${evtMsg}、${eventCount}件のJoin/Leaveを記録、${users}名を登録`
       : `${eventCount}件のJoin/Leaveを記録、${users}名を登録`
 
     return {
@@ -229,7 +239,21 @@ export function LogImporter() {
         </select>
         <span>までは同じ日のイベントにまとめる</span>
         <span style={{ opacity: 0.6, width: '100%' }}>
-          例：21時開始のライブ→打ち上げで翌2時まで遊んでも、1つのイベントにまとまります（日をまたいでもOK）
+          例：21時開始のライブ→打ち上げで翌2時まで遊んでも、1つのイベントにまとまります（日をまたいでも・ファイルが分かれてもOK）
+        </span>
+
+        <span style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.07)', margin: '4px 0' }} />
+
+        <span>🏠 メインのワールド名（部分一致・任意）</span>
+        <input
+          value={mainWorld}
+          onChange={e => setMainWorld(e.target.value)}
+          disabled={isImporting}
+          placeholder="例：ALLVERSE"
+          style={{ padding: '4px 8px', borderRadius: 6, minWidth: 160 }}
+        />
+        <span style={{ opacity: 0.6, width: '100%' }}>
+          指定すると、そのワールドをイベントの代表名に。空なら参加者が一番多いワールドを自動で代表にします（自宅ワールド回避）
         </span>
       </div>
 

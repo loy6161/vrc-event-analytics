@@ -15,6 +15,7 @@ import {
 import {
   createEvent,
   getEventById,
+  findEventByDate,
   updateEvent,
   isLogImported,
   recordImportedLog,
@@ -138,6 +139,10 @@ router.post(
   let cutoffHour = cutoffRaw != null ? parseInt(String(cutoffRaw), 10) : 6
   if (isNaN(cutoffHour) || cutoffHour < 0 || cutoffHour > 12) cutoffHour = 6
 
+  // メインのワールド名（部分一致・任意）。指定すると代表ワールド/イベント名に優先採用
+  const mainWorldRaw = isTextUpload ? req.query.mainWorld : req.body?.mainWorld
+  const mainWorld = typeof mainWorldRaw === 'string' ? mainWorldRaw.trim() : ''
+
   // ── Validate inputs ──────────────────────────────────────────
   let parsed
   try {
@@ -185,7 +190,7 @@ router.post(
   const allSessions = segmentIntoSessions(parsed.events)
 
   // ── Auto-create or match events ────────────────────────────────
-  const createdEvents: { id: number; name: string; date: string; worldName?: string }[] = []
+  const createdEvents: { id: number; name: string; date: string; worldName?: string; merged?: boolean }[] = []
   let totalInserted = 0
 
   if (event) {
@@ -219,9 +224,14 @@ router.post(
       totalInserted = await insertPlayerEventsBatch(insertInputs)
     }
   } else {
-    // ── No event specified: 論理的な「1日」ごとに1イベント自動作成 ──
-    // ライブ→打ち上げ→深夜のように日付をまたぐ滞在も、cutoffHour(既定6時)までは
-    // 同じ日のイベントとしてまとめる。途中でワールドを移動しても1日1イベント。
+    // ── No event specified: 論理的な「1日」ごとに find-or-create で1イベントに集約 ──
+    // ・cutoffHour(既定6時)までは前日扱い（深夜の打ち上げ対応）
+    // ・同じ論理日は既存イベントに結合（ログファイルが分かれても1夜=1イベント）
+    // ・代表ワールド = mainWorld 部分一致 優先 → 次に参加者最多のワールド（自宅ワールドを避ける）
+    const norm = (s?: string) => (s ?? '').toLowerCase()
+    const matchesMain = (name?: string) => !!mainWorld && norm(name).includes(norm(mainWorld))
+    const uniqueCount = (s: WorldSession) => new Set(s.playerEvents.map(e => e.displayName)).size
+
     const byDay = new Map<string, WorldSession[]>()
     for (const session of allSessions) {
       if (session.playerEvents.length === 0) continue
@@ -232,40 +242,61 @@ router.post(
 
     for (const [day, sessions] of byDay) {
       const dayPlayerEvents = sessions.flatMap(s => s.playerEvents)
-      // 代表ワールド = 最初にワールド名を持つセッション
-      const primary = sessions.find(s => s.worldName) ?? sessions[0]
+      const named = sessions.filter(s => s.worldName)
+      const rep =
+        named.find(s => matchesMain(s.worldName)) ??                       // 1. メイン指定に一致
+        [...named].sort((a, b) => uniqueCount(b) - uniqueCount(a))[0] ??   // 2. 参加者最多（自宅回避）
+        sessions[0]                                                        // 3. fallback
       const worldCount = new Set(sessions.map(s => s.worldId).filter(Boolean)).size
-      const startTime = sessions[0].startTime.slice(11, 16)             // その日の最初の開始
-      const endTime = sessions[sessions.length - 1].endTime.slice(11, 16) // 最後の終了
-
-      const eventName = primary.worldName
+      const startTime = sessions[0].startTime.slice(11, 16)
+      const endTime = sessions[sessions.length - 1].endTime.slice(11, 16)
+      const eventName = rep.worldName
         ? (worldCount > 1
-            ? `${primary.worldName} 他${worldCount - 1}ワールド (${day})`
-            : `${primary.worldName} (${day})`)
+            ? `${rep.worldName} 他${worldCount - 1}ワールド (${day})`
+            : `${rep.worldName} (${day})`)
         : `イベント ${day}`
 
-      const newEvent = await createEvent({
-        name: eventName,
-        date: day,
-        start_time: startTime,
-        end_time: endTime,
-        world_id: primary.worldId,
-        world_name: primary.worldName,
-        instance_id: primary.instanceId,
-        region: primary.region,
-        access_type: primary.accessType,
-      })
+      // 同じ論理日の既存イベントへ結合。無ければ新規作成。
+      let target = await findEventByDate(day)
+      let merged = false
+      if (target) {
+        merged = true
+        // 代表が mainWorld 一致で既存がまだ未一致なら、名前/ワールドを昇格
+        if (matchesMain(rep.worldName) && !matchesMain(target.world_name)) {
+          target = (await updateEvent(target.id, {
+            name: eventName,
+            world_id: rep.worldId,
+            world_name: rep.worldName,
+            instance_id: rep.instanceId,
+            region: rep.region,
+            access_type: rep.accessType,
+          }))!
+        }
+      } else {
+        target = await createEvent({
+          name: eventName,
+          date: day,
+          start_time: startTime,
+          end_time: endTime,
+          world_id: rep.worldId,
+          world_name: rep.worldName,
+          instance_id: rep.instanceId,
+          region: rep.region,
+          access_type: rep.accessType,
+        })
+      }
 
       createdEvents.push({
-        id: newEvent.id,
-        name: newEvent.name,
-        date: newEvent.date,
-        worldName: primary.worldName,
+        id: target.id,
+        name: target.name,
+        date: target.date,
+        worldName: target.world_name,
+        merged,
       })
 
-      // その日の全セッションのプレイヤーイベントを1イベントに紐付け
+      // その日の全セッションのプレイヤーイベントを同じイベントに紐付け（UNIQUE制約で重複排除）
       const insertInputs: InsertPlayerEventInput[] = dayPlayerEvents.map(pe => ({
-        event_id: newEvent.id,
+        event_id: target!.id,
         user_id: pe.userId,
         display_name: pe.displayName,
         event_type: pe.type,

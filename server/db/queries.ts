@@ -82,6 +82,16 @@ export async function getEventById(id: number): Promise<Event | null> {
   return row ? mapEvent(row as any) : null
 }
 
+// 同じ論理日の既存イベントを1件返す（ログ取込の find-or-create 用。1夜=1イベントに結合）。
+export async function findEventByDate(date: string): Promise<Event | null> {
+  const result = await getDatabase().execute({
+    sql: 'SELECT * FROM events WHERE date = ? ORDER BY start_time ASC LIMIT 1',
+    args: [date],
+  })
+  const row = result.rows[0]
+  return row ? mapEvent(row as any) : null
+}
+
 export interface CreateEventInput {
   name: string
   date: string
