@@ -838,6 +838,71 @@ router.get('/series-comparison', async (_req: Request, res: Response) => {
   } catch (err: any) { fail(res, err.message) }
 })
 
+// ── 開催形態比較 ───────────────────────────────────────────────────
+// 開催形態（手動の format > ログ由来の access_type）ごとの集計を横並びで返す。
+// Group Only / Group+ / 事前申請制 などで集客がどう変わるかを比較する。
+// ?series= でシリーズ内に絞った比較も可能（グローバル絞り込みに追従）。
+router.get('/format-comparison', async (req: Request, res: Response) => {
+  try {
+    const db = getDatabase()
+    const series = seriesParam(req)
+    const events = (await db.execute(
+      series
+        ? { sql: 'SELECT id, format, access_type, date FROM events WHERE series = ?', args: [series] }
+        : 'SELECT id, format, access_type, date FROM events'
+    )).rows as any[]
+    if (events.length === 0) return ok(res, [])
+
+    const eventIds = events.map(e => e.id)
+    const ph = eventIds.map(() => '?').join(',')
+    const joins = (await db.execute({
+      sql: `SELECT pe.event_id, COALESCE(pe.user_id, pe.display_name) as key
+            FROM player_events pe
+            WHERE pe.event_type = 'join' AND pe.event_id IN (${ph})
+              AND pe.display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)`,
+      args: eventIds,
+    })).rows as any[]
+
+    // 形態キー: 手動 format 優先、なければ access_type、どちらも無ければ '不明'
+    const formatOf = (e: any) => (e.format as string) || (e.access_type as string) || '不明'
+    const evFormat = new Map<number, string>()
+    for (const e of events) evFormat.set(e.id as number, formatOf(e))
+
+    const groups = new Map<string, Map<number, Set<string>>>()
+    for (const e of events) {
+      const f = formatOf(e)
+      if (!groups.has(f)) groups.set(f, new Map())
+      groups.get(f)!.set(e.id as number, new Set())
+    }
+    for (const j of joins) {
+      const f = evFormat.get(j.event_id as number)
+      if (f === undefined) continue
+      groups.get(f)!.get(j.event_id as number)!.add(String(j.key))
+    }
+
+    const result = []
+    for (const [format, perEvent] of groups) {
+      const sizes = Array.from(perEvent.values()).map(s => s.size)
+      const total = sizes.reduce((a, b) => a + b, 0)
+      const userEvents = new Map<string, number>()
+      for (const attendees of perEvent.values()) for (const k of attendees) userEvents.set(k, (userEvents.get(k) ?? 0) + 1)
+      let repeaters = 0
+      for (const c of userEvents.values()) if (c >= 2) repeaters++
+      result.push({
+        format,
+        event_count: perEvent.size,
+        avg_attendees: perEvent.size > 0 ? round1(total / perEvent.size) : 0,
+        max_attendees: sizes.length > 0 ? Math.max(...sizes) : 0,
+        total_attendees: total,
+        unique_users: userEvents.size,
+        repeat_rate: userEvents.size > 0 ? round3(repeaters / userEvents.size) : 0,
+      })
+    }
+    result.sort((a, b) => b.event_count - a.event_count)
+    ok(res, result)
+  } catch (err: any) { fail(res, err.message) }
+})
+
 // シリーズ別の参加者推移（重ね描きチャート用）。
 // 各シリーズについて、イベントごとの {date, event_name, unique_attendees} を時系列で返す。
 router.get('/series-trends', async (_req: Request, res: Response) => {

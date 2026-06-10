@@ -72,12 +72,12 @@ router.get('/:id/player-events', async (req: Request, res: Response) => {
 })
 
 router.post('/', async (req: Request, res: Response) => {
-  const { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series } = req.body
+  const { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series, format } = req.body
   if (!name || typeof name !== 'string') return fail(res, 'name is required', 400)
   if (!date || typeof date !== 'string') return fail(res, 'date is required (YYYY-MM-DD)', 400)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail(res, 'date must be YYYY-MM-DD format', 400)
   try {
-    const event = await createEvent({ name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series })
+    const event = await createEvent({ name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series, format })
     ok(res, event, 201)
   } catch (err: any) {
     fail(res, err.message)
@@ -87,12 +87,12 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   const id = parseId(req.params.id)
   if (id === null) return fail(res, 'Invalid event id', 400)
-  const { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series } = req.body
+  const { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series, format } = req.body
   if (date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return fail(res, 'date must be YYYY-MM-DD format', 400)
   }
   try {
-    const event = await updateEvent(id, { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series })
+    const event = await updateEvent(id, { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series, format })
     if (!event) return fail(res, 'Event not found', 404)
     ok(res, event)
   } catch (err: any) {

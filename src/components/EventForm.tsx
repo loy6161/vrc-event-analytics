@@ -25,6 +25,7 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
     description: '',
     tags: '',
     series: '',
+    format: '',
   })
   // シリーズのサジェストはグローバル（ヘッダーと共通）から取得。保存後は一覧を更新
   const { seriesList: seriesSuggestions, refreshSeriesList } = useSeries()
@@ -52,6 +53,7 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
           description: event.description || '',
           tags: event.tags?.join(',') || '',
           series: event.series || '',
+          format: event.format || '',
         })
       } else {
         setError(data.error)
@@ -99,6 +101,7 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
         description: form.description || undefined,
         tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : undefined,
         series: form.series.trim(), // '' = 未分類（解除）
+        format: form.format.trim(), // '' = 未設定（解除）
       }
 
       const response = await fetch(url, {
@@ -235,6 +238,28 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
             disabled={submitting}
             rows={4}
           />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="format">開催形態</label>
+          <input
+            id="format"
+            name="format"
+            type="text"
+            placeholder="例：事前申請制（空＝ログ由来のアクセス種別を使用）"
+            value={form.format}
+            onChange={handleChange}
+            disabled={submitting}
+            list="form-format-suggestions"
+          />
+          <datalist id="form-format-suggestions">
+            <option value="事前申請制" />
+            <option value="招待制" />
+            <option value="Group Only" />
+            <option value="Group+" />
+            <option value="Group公開" />
+            <option value="一般公開" />
+          </datalist>
         </div>
 
         <div className="form-group">

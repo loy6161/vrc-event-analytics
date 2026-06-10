@@ -97,7 +97,11 @@ function parseInstanceParams(paramStr: string) {
   const hasCanRequestInvite = ACCESS_CAN_REQUEST_INVITE_RE.test(paramStr)
   const hasGroup = ACCESS_GROUP_RE.test(paramStr)
   let accessType = 'public'
-  if (hasGroup) accessType = 'group'
+  if (hasGroup) {
+    // ~groupAccessType(members|plus|public) で Group / Group+ / Group公開 を区別
+    const ga = paramStr.match(/~groupAccessType\((\w+)\)/)?.[1]
+    accessType = ga === 'plus' ? 'group+' : ga === 'public' ? 'group public' : 'group'
+  }
   else if (hasFriends && hasCanRequestInvite) accessType = 'friends+'
   else if (hasFriends) accessType = 'friends'
   else if (hasHidden && hasCanRequestInvite) accessType = 'invite+'

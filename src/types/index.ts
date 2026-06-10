@@ -13,7 +13,40 @@ export interface Event {
   description?: string
   tags?: string[] // JSON配列を配列型に変換
   series?: string // イベントシリーズ名（clubVERSE / theALL / VERSARY 等）。null=未分類
+  format?: string // 開催形態（手動）: 事前申請制 など。ログ由来の access_type と併用
   created_at: string // ISO 8601
+}
+
+// ユーザーバッジ（出演者制度・関係者・スタッフ・要注意）
+export type BadgeType = 'regular' | 'visitor' | 'performer' | 'manager' | 'staff' | 'watch'
+
+export interface UserBadge {
+  id: number
+  display_name?: string
+  badge_type: BadgeType
+  series: string // '' = 全体
+  note?: string
+}
+
+// バッジ表示メタ（ラベル・色）。UI共通
+export const BADGE_META: Record<BadgeType, { label: string; color: string; bg: string; icon: string; scoped: boolean }> = {
+  regular:   { label: 'レギュラー',   color: '#b45309', bg: 'rgba(245,158,11,0.18)', icon: '⭐', scoped: true },
+  visitor:   { label: 'ビジター',     color: '#1d4ed8', bg: 'rgba(59,130,246,0.15)', icon: '🎟', scoped: true },
+  performer: { label: '出演者',       color: '#7c3aed', bg: 'rgba(139,92,246,0.15)', icon: '🎤', scoped: true },
+  manager:   { label: 'マネージャー', color: '#0f766e', bg: 'rgba(20,184,166,0.15)', icon: '💼', scoped: true },
+  staff:     { label: 'スタッフ',     color: '#475569', bg: 'rgba(100,116,139,0.18)', icon: '🛠', scoped: true },
+  watch:     { label: '要注意',       color: '#b91c1c', bg: 'rgba(239,68,68,0.15)', icon: '⚠️', scoped: false },
+}
+
+// 開催形態比較（/api/analytics/format-comparison）
+export interface FormatComparison {
+  format: string
+  event_count: number
+  avg_attendees: number
+  max_attendees: number
+  total_attendees: number
+  unique_users: number
+  repeat_rate: number
 }
 
 // シリーズマスタ（/api/series）

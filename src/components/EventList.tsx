@@ -298,7 +298,12 @@ export function EventList({ onSelect }: EventListProps) {
                 <div>{event.world_name || event.world_id || '—'}</div>
                 <div className="event-meta-badges">
                   {event.region && <span className="badge-region">{event.region.toUpperCase()}</span>}
-                  {event.access_type && <span className="badge-access">{event.access_type}</span>}
+                  {/* 開催形態: 手動 format 優先、なければログ由来の access_type */}
+                  {(event.format || event.access_type) && (
+                    <span className="badge-access" title={event.format ? `開催形態（手動設定）${event.access_type ? ` / ログ上は ${event.access_type}` : ''}` : 'ログ由来のアクセス種別'}>
+                      {event.format || event.access_type}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="col-actions" onClick={e => e.stopPropagation()}>

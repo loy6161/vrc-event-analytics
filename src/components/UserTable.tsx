@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { createColumnHelper } from '@tanstack/react-table'
 import { DataTable } from './DataTable'
-import type { User } from '../types/index.js'
+import type { User, UserBadge } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
 import { useSeries } from '../contexts/SeriesContext'
+import { BadgeChips, BadgeEditorModal } from './UserBadges'
 import '../styles/UserTable.css'
 
 interface UserWithStats extends User {
+  badges: UserBadge[]
   attendance_count: number
   total_stay_duration: number
   avg_stay_duration: number
@@ -57,16 +59,6 @@ const userColumns = [
     cell: info => {
       const date = info.getValue()
       return date ? new Date(date).toLocaleDateString('ja-JP') : '-'
-    },
-    size: 110,
-  }),
-  col.accessor('performer_role', {
-    header: '出演者',
-    cell: info => {
-      const role = info.getValue()
-      if (role === 'regular') return <span className="badge badge-regular">🎤 レギュラー</span>
-      if (role === 'visitor') return <span className="badge badge-visitor">🌟 ビジター</span>
-      return '-'
     },
     size: 110,
   }),
@@ -122,6 +114,10 @@ export function UserTable({ onSelectUser }: UserTableProps) {
   const [excludedFilter, setExcludedFilter] = useState<'all' | 'excluded' | 'not-excluded'>('all')
   const [updating, setUpdating] = useState(false)
   const [bulkTagInput, setBulkTagInput] = useState('')
+  // バッジフィルタ: 出演者系/関係者/要注意/バッジなし
+  const [badgeFilter, setBadgeFilter] = useState<'all' | 'performers' | 'related' | 'watch' | 'none'>('all')
+  // バッジ編集モーダルの対象ユーザー
+  const [editingUser, setEditingUser] = useState<UserWithStats | null>(null)
 
   // 詳細フィルター
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -209,6 +205,17 @@ export function UserTable({ onSelectUser }: UserTableProps) {
 
     if (tagFilter) filtered = filtered.filter(u => u.tags?.includes(tagFilter))
 
+    // バッジフィルタ
+    if (badgeFilter === 'performers') {
+      filtered = filtered.filter(u => u.badges?.some(b => ['regular', 'visitor', 'performer'].includes(b.badge_type)))
+    } else if (badgeFilter === 'related') {
+      filtered = filtered.filter(u => u.badges?.some(b => ['manager', 'staff'].includes(b.badge_type)))
+    } else if (badgeFilter === 'watch') {
+      filtered = filtered.filter(u => u.badges?.some(b => b.badge_type === 'watch'))
+    } else if (badgeFilter === 'none') {
+      filtered = filtered.filter(u => !u.badges || u.badges.length === 0)
+    }
+
     // 初参加から何日
     if (firstDaysMin || firstDaysMax) {
       filtered = filtered.filter(u => {
@@ -252,7 +259,7 @@ export function UserTable({ onSelectUser }: UserTableProps) {
 
     setUsers(filtered)
   }, [
-    allUsers, tagFilter, staffFilter, excludedFilter,
+    allUsers, tagFilter, staffFilter, excludedFilter, badgeFilter,
     firstDaysMin, firstDaysMax,
     lastDaysMin, lastDaysMax,
     countMin, countMax,
@@ -304,20 +311,36 @@ export function UserTable({ onSelectUser }: UserTableProps) {
     }
   }
 
-  const bulkSetRole = async (role: 'regular' | 'visitor' | null) => {
+  // 一括バッジ付与/解除。対象シリーズはヘッダーで選択中のグローバルシリーズ（全体なら ''）。
+  const bulkSetBadge = async (badgeType: 'regular' | 'visitor' | 'performer' | null) => {
     if (selected.size === 0) return
     setUpdating(true)
     try {
       const selectedUsers = users.filter(u => selected.has(u.id))
-      await Promise.all(selectedUsers.map(user =>
-        fetch(`/api/users/${encodeURIComponent(user.display_name)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ performer_role: role }),
-        })
-      ))
+      if (badgeType === null) {
+        // 出演者系（レギュラー/ビジター/出演者）をこのシリーズから一括解除
+        await Promise.all(selectedUsers.flatMap(user =>
+          (['regular', 'visitor', 'performer'] as const).map(t =>
+            fetch(`/api/users/${encodeURIComponent(user.display_name)}/badges`, {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ badge_type: t, series }),
+            })
+          )
+        ))
+      } else {
+        await Promise.all(selectedUsers.map(user =>
+          fetch(`/api/users/${encodeURIComponent(user.display_name)}/badges`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ badge_type: badgeType, series }),
+          })
+        ))
+      }
+      dataCache.deletePrefix('performers:')
+      dataCache.delete('citizenship-alerts')
       setSelected(new Set())
-      await loadUsers()
+      await loadUsers(periodStart || undefined, periodEnd || undefined, true)
     } catch (err: any) {
       setError(String(err))
     } finally {
@@ -372,7 +395,27 @@ export function UserTable({ onSelectUser }: UserTableProps) {
       ),
       size: 40,
     }),
-    ...userColumns,
+    userColumns[0], // 名前
+    // バッジ列（クリックで編集）
+    col.display({
+      id: 'badges',
+      header: 'バッジ',
+      cell: info => {
+        const u = info.row.original
+        return (
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}
+            onClick={e => { e.stopPropagation(); setEditingUser(u) }}
+            title="クリックでバッジを編集"
+          >
+            <BadgeChips badges={u.badges ?? []} small />
+            <span style={{ opacity: 0.45, fontSize: 12 }}>{(u.badges?.length ?? 0) === 0 ? '＋付与' : '✏️'}</span>
+          </span>
+        )
+      },
+      size: 200,
+    }),
+    ...userColumns.slice(1),
   ]
 
   return (
@@ -408,6 +451,14 @@ export function UserTable({ onSelectUser }: UserTableProps) {
             ))}
           </select>
 
+          <select value={badgeFilter} onChange={e => setBadgeFilter(e.target.value as any)} className="filter-select">
+            <option value="all">バッジ: 全て</option>
+            <option value="performers">🎤 出演者系のみ</option>
+            <option value="related">💼 関係者（ﾏﾈ/ｽﾀｯﾌ）</option>
+            <option value="watch">⚠️ 要注意のみ</option>
+            <option value="none">バッジなし</option>
+          </select>
+
           <button
             className={`advanced-filter-toggle${advancedOpen ? ' active' : ''}${hasAdvancedFilters ? ' has-filters' : ''}`}
             onClick={() => setAdvancedOpen(o => !o)}
@@ -440,13 +491,17 @@ export function UserTable({ onSelectUser }: UserTableProps) {
 
             <span className="action-divider">|</span>
 
-            <button onClick={() => bulkSetRole('regular')} disabled={updating} className="btn btn-sm btn-regular">
-              🎤 レギュラー
+            <span style={{ fontSize: 11, opacity: 0.6 }}>対象: {series || '全体'}</span>
+            <button onClick={() => bulkSetBadge('regular')} disabled={updating} className="btn btn-sm btn-regular" title={`選択ユーザーに⭐レギュラー（${series || '全体'}）を付与`}>
+              ⭐ レギュラー
             </button>
-            <button onClick={() => bulkSetRole('visitor')} disabled={updating} className="btn btn-sm btn-visitor">
-              🌟 ビジター
+            <button onClick={() => bulkSetBadge('visitor')} disabled={updating} className="btn btn-sm btn-visitor" title={`選択ユーザーに🎟ビジター（${series || '全体'}）を付与`}>
+              🎟 ビジター
             </button>
-            <button onClick={() => bulkSetRole(null)} disabled={updating} className="btn btn-sm btn-secondary">
+            <button onClick={() => bulkSetBadge('performer')} disabled={updating} className="btn btn-sm btn-secondary" title={`選択ユーザーに🎤出演者（${series || '全体'}）を付与`}>
+              🎤 出演者
+            </button>
+            <button onClick={() => bulkSetBadge(null)} disabled={updating} className="btn btn-sm btn-secondary" title={`選択ユーザーの出演者系バッジ（${series || '全体'}）を解除`}>
               ✗ 出演者解除
             </button>
 
@@ -631,6 +686,20 @@ export function UserTable({ onSelectUser }: UserTableProps) {
         emptyMessage="ユーザーが見つかりません"
         onRowClick={onSelectUser}
       />
+
+      {/* バッジ編集モーダル */}
+      {editingUser && (
+        <BadgeEditorModal
+          displayName={editingUser.display_name}
+          badges={editingUser.badges ?? []}
+          onClose={() => setEditingUser(null)}
+          onSaved={newBadges => {
+            // 一覧とモーダルの両方へ即時反映（サーバー再取得なし）
+            setAllUsers(prev => prev.map(u => u.display_name === editingUser.display_name ? { ...u, badges: newBadges } : u))
+            setEditingUser(prev => prev ? { ...prev, badges: newBadges } : prev)
+          }}
+        />
+      )}
     </div>
   )
 }

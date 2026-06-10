@@ -29,10 +29,12 @@ interface DashboardData {
 
 interface PrepCitizenAlert {
   display_name: string
-  type: 'expired' | 'promotion'
+  type: 'expired' | 'promotion' | 'reach'
   days_since_last?: number
   attendance_count?: number
   total_stay_hours?: number
+  need_attend?: number
+  need_stay_minutes?: number
 }
 
 // ─────────────────────────────────────────────
@@ -331,7 +333,7 @@ export function Dashboard() {
           <h2 className="dash-section-title">
             準市民アラート
             <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.6, marginLeft: 10 }}>
-              判定対象: {citizenshipTargets.length > 0 ? citizenshipTargets.join('・') : '全イベント'}
+              判定対象: {citizenshipTargets.length > 0 ? citizenshipTargets.join('・') : '全イベント'} ／ 出演者・関係者（マネージャー/スタッフ）は除外
             </span>
           </h2>
           <div className="dash-prep-alerts">
@@ -341,7 +343,7 @@ export function Dashboard() {
                 className={`dash-prep-alert dash-prep-alert-${alert.type}`}
               >
                 <div className="dash-prep-alert-icon">
-                  {alert.type === 'expired' ? '⚠️' : '🎉'}
+                  {alert.type === 'expired' ? '⚠️' : alert.type === 'promotion' ? '🎉' : '🎯'}
                 </div>
                 <div className="dash-prep-alert-body">
                   <div className="dash-prep-alert-name">{alert.display_name}</div>
@@ -349,14 +351,22 @@ export function Dashboard() {
                     <div className="dash-prep-alert-desc">
                       市民権失効 — 最終参加から <strong>{alert.days_since_last}</strong> 日経過
                     </div>
-                  ) : (
+                  ) : alert.type === 'promotion' ? (
                     <div className="dash-prep-alert-desc">
                       昇格条件達成 — 参加 <strong>{alert.attendance_count}</strong> 回 / 合計滞在 <strong>{alert.total_stay_hours}</strong>h
+                    </div>
+                  ) : (
+                    <div className="dash-prep-alert-desc">
+                      リーチ — 参加 <strong>{alert.attendance_count}</strong> 回 / 滞在 <strong>{alert.total_stay_hours}</strong>h。あと
+                      {(alert.need_attend ?? 0) > 0 && <> 参加<strong>{alert.need_attend}</strong>回</>}
+                      {(alert.need_attend ?? 0) > 0 && (alert.need_stay_minutes ?? 0) > 0 && '・'}
+                      {(alert.need_stay_minutes ?? 0) > 0 && <> 滞在<strong>{Math.ceil((alert.need_stay_minutes ?? 0) / 6) / 10}</strong>h</>}
+                      で昇格
                     </div>
                   )}
                 </div>
                 <div className="dash-prep-alert-badge">
-                  {alert.type === 'expired' ? '市民権失効' : '昇格'}
+                  {alert.type === 'expired' ? '市民権失効' : alert.type === 'promotion' ? '昇格' : 'リーチ'}
                 </div>
               </div>
             ))}
