@@ -74,20 +74,6 @@ const userColumns = [
       : '-'),
     size: 80,
   }),
-  col.accessor('tags', {
-    header: 'タグ',
-    cell: info => {
-      const tags = info.getValue() as string[] | undefined
-      return (
-        <div className="user-tags">
-          {tags?.map(tag => (
-            <span key={tag} className="tag-badge">{tag}</span>
-          ))}
-        </div>
-      )
-    },
-    size: 150,
-  }),
 ]
 
 interface UserTableProps {
@@ -416,6 +402,28 @@ export function UserTable({ onSelectUser }: UserTableProps) {
       size: 200,
     }),
     ...userColumns.slice(1),
+    // タグ列（クリックで編集モーダル）
+    col.display({
+      id: 'tags',
+      header: 'タグ',
+      cell: info => {
+        const u = info.row.original
+        return (
+          <div
+            className="user-tags"
+            style={{ cursor: 'pointer' }}
+            onClick={e => { e.stopPropagation(); setEditingUser(u) }}
+            title="クリックでタグを編集"
+          >
+            {u.tags?.map(tag => (
+              <span key={tag} className="tag-badge">{tag}</span>
+            ))}
+            <span style={{ opacity: 0.45, fontSize: 12 }}>{(u.tags?.length ?? 0) === 0 ? '＋付与' : '✏️'}</span>
+          </div>
+        )
+      },
+      size: 150,
+    }),
   ]
 
   return (
@@ -687,16 +695,18 @@ export function UserTable({ onSelectUser }: UserTableProps) {
         onRowClick={onSelectUser}
       />
 
-      {/* バッジ編集モーダル */}
+      {/* バッジ・タグ編集モーダル */}
       {editingUser && (
         <BadgeEditorModal
           displayName={editingUser.display_name}
           badges={editingUser.badges ?? []}
+          tags={editingUser.tags ?? []}
+          allTags={allTags}
           onClose={() => setEditingUser(null)}
-          onSaved={newBadges => {
-            // 一覧とモーダルの両方へ即時反映（サーバー再取得なし）
-            setAllUsers(prev => prev.map(u => u.display_name === editingUser.display_name ? { ...u, badges: newBadges } : u))
-            setEditingUser(prev => prev ? { ...prev, badges: newBadges } : prev)
+          onChange={patch => {
+            // 一覧とモーダルの両方へ即時反映（サーバー再取得なし＝ページ位置も維持）
+            setAllUsers(prev => prev.map(u => u.display_name === editingUser.display_name ? { ...u, ...patch } : u))
+            setEditingUser(prev => prev ? { ...prev, ...patch } : prev)
           }}
         />
       )}
