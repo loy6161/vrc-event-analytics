@@ -80,6 +80,67 @@ export async function fetchVideoMetadata(videoId: string): Promise<VideoMetadata
 }
 
 // ──────────────────────────────────────────────
+// Channel → recent live streams（一括取得用）
+// ──────────────────────────────────────────────
+
+/**
+ * チャンネル指定（チャンネルID UC... / @ハンドル / URL）を channelId に解決する。
+ */
+export async function resolveChannelId(input: string): Promise<string> {
+  const yt = getClient()
+  let s = input.trim()
+
+  // URL から抜き出す
+  // .../channel/UCxxxx → ID, .../@handle → ハンドル
+  const chMatch = s.match(/channel\/(UC[\w-]{22})/)
+  if (chMatch) return chMatch[1]
+  const handleInUrl = s.match(/youtube\.com\/(@[\w.\-]+)/)
+  if (handleInUrl) s = handleInUrl[1]
+
+  // すでに channelId
+  if (/^UC[\w-]{22}$/.test(s)) return s
+
+  // @ハンドル
+  if (s.startsWith('@')) {
+    const res = await yt.channels.list({ part: ['id'], forHandle: s } as any)
+    const id = res.data.items?.[0]?.id
+    if (id) return id
+    throw new Error(`チャンネルが見つかりません: ${input}`)
+  }
+
+  // ユーザー名（旧 /user/ 形式）
+  const res = await yt.channels.list({ part: ['id'], forUsername: s } as any)
+  const id = res.data.items?.[0]?.id
+  if (id) return id
+  throw new Error(`チャンネルを解決できませんでした: ${input}（チャンネルID UC... か @ハンドルで指定してください）`)
+}
+
+/**
+ * チャンネルの最近の動画のうち「ライブ配信だったもの」の videoId 一覧を返す。
+ * uploads プレイリスト経由で安価（playlistItems=1ユニット, videos=1ユニット）。
+ */
+export async function fetchChannelLiveVideoIds(channelId: string, max = 50): Promise<string[]> {
+  const yt = getClient()
+
+  // uploads プレイリストID（UC... → UU...）
+  const ch = await yt.channels.list({ part: ['contentDetails'], id: [channelId] })
+  const uploads = ch.data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads
+  if (!uploads) throw new Error('チャンネルのアップロード一覧が取得できませんでした')
+
+  // 直近の動画ID
+  const pl = await yt.playlistItems.list({ part: ['contentDetails'], playlistId: uploads, maxResults: Math.min(max, 50) })
+  const ids = (pl.data.items ?? []).map(i => i.contentDetails?.videoId).filter((v): v is string => !!v)
+  if (ids.length === 0) return []
+
+  // liveStreamingDetails があるもの＝ライブ配信（予定/ライブ/アーカイブ）だけに絞る
+  const vids = await yt.videos.list({ part: ['liveStreamingDetails'], id: ids })
+  return (vids.data.items ?? [])
+    .filter(v => !!v.liveStreamingDetails)
+    .map(v => v.id)
+    .filter((v): v is string => !!v)
+}
+
+// ──────────────────────────────────────────────
 // Live Chat Messages
 // ──────────────────────────────────────────────
 
