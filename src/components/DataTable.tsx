@@ -27,9 +27,22 @@ export interface DataTableProps<T extends RowData> {
   emptyMessage?: string
   /** Callback when a row is clicked */
   onRowClick?: (row: T) => void
+  /**
+   * 指定すると、ページ位置・検索・ソートをページ遷移をまたいで保持する
+   * （詳細→戻るで1ページ目に戻されない）。リロードでリセット。
+   */
+  stateKey?: string
 }
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
+
+// stateKey ごとのテーブルUI状態（モジュール変数＝SPA内のページ遷移を生き延び、リロードで消える）
+interface PersistedTableState {
+  sorting: SortingState
+  globalFilter: string
+  pagination: PaginationState
+}
+const tableStateStore = new Map<string, PersistedTableState>()
 
 export function DataTable<T extends RowData>({
   data,
@@ -40,13 +53,20 @@ export function DataTable<T extends RowData>({
   toolbarRight,
   emptyMessage = 'No data',
   onRowClick,
+  stateKey,
 }: DataTableProps<T>) {
-  const [sorting, setSorting] = useState<SortingState>([])
-  const [globalFilter, setGlobalFilter] = useState('')
-  const [pagination, setPagination] = useState<PaginationState>({
+  const saved = stateKey ? tableStateStore.get(stateKey) : undefined
+  const [sorting, setSorting] = useState<SortingState>(saved?.sorting ?? [])
+  const [globalFilter, setGlobalFilter] = useState(saved?.globalFilter ?? '')
+  const [pagination, setPagination] = useState<PaginationState>(saved?.pagination ?? {
     pageIndex: 0,
     pageSize: defaultPageSize,
   })
+
+  // stateKey 指定時はUI状態を保存（マウントをまたいで復元できるように）
+  useEffect(() => {
+    if (stateKey) tableStateStore.set(stateKey, { sorting, globalFilter, pagination })
+  }, [stateKey, sorting, globalFilter, pagination])
 
   const table = useReactTable({
     data,

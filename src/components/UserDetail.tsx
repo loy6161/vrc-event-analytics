@@ -1,24 +1,33 @@
 import { useState, useEffect, useRef } from 'react'
 import { createColumnHelper } from '@tanstack/react-table'
 import { DataTable } from './DataTable'
-import type { User } from '../types/index.js'
+import type { User, UserBadge } from '../types/index.js'
+import { BadgeChips, BadgeEditorModal } from './UserBadges'
 import '../styles/UserDetail.css'
 
+// イベント単位の来場記録（1イベント=1行。サーバー側で夜単位に集計済み）
 interface UserAttendanceRecord {
   event_id: number
   event_name: string
   event_date: string
-  join_time: string
-  leave_time: string | null
-  stay_duration: number | null
+  first_join: string
+  last_leave: string | null
+  stay_duration: number
+  entries: number
 }
 
 interface UserDetailData {
   user: User
+  badges: UserBadge[]
   attendance_records: UserAttendanceRecord[]
 }
 
 const col = createColumnHelper<UserAttendanceRecord>()
+
+function fmtTime(iso: string | null): string {
+  if (!iso) return '-'
+  try { return new Date(iso).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) } catch { return '-' }
+}
 
 const attendanceColumns = [
   col.accessor('event_date', {
@@ -29,23 +38,20 @@ const attendanceColumns = [
   col.accessor('event_name', {
     header: 'イベント',
     cell: info => <span className="event-name-cell">{info.getValue()}</span>,
-    size: 180,
+    size: 200,
   }),
-  col.accessor('join_time', {
+  col.accessor('first_join', {
     header: '入場',
-    cell: info => new Date(info.getValue()).toLocaleTimeString('ja-JP'),
-    size: 100,
+    cell: info => fmtTime(info.getValue()),
+    size: 80,
   }),
-  col.accessor('leave_time', {
+  col.accessor('last_leave', {
     header: '退場',
-    cell: info => {
-      const time = info.getValue()
-      return time ? new Date(time).toLocaleTimeString('ja-JP') : <span className="text-muted">-</span>
-    },
-    size: 100,
+    cell: info => <span className={info.getValue() ? '' : 'text-muted'}>{fmtTime(info.getValue())}</span>,
+    size: 80,
   }),
   col.accessor('stay_duration', {
-    header: '滞在時間',
+    header: '合計滞在',
     cell: info => {
       const mins = info.getValue()
       if (!mins) return '-'
@@ -55,6 +61,14 @@ const attendanceColumns = [
       return `${h}h ${m}m`
     },
     size: 90,
+  }),
+  col.accessor('entries', {
+    header: '入退場',
+    cell: info => {
+      const n = info.getValue()
+      return n > 1 ? <span title="再入場あり">⟳ {n}回</span> : `${n}回`
+    },
+    size: 70,
   }),
 ]
 
@@ -77,6 +91,9 @@ export function UserDetail({ displayName, onBack }: UserDetailProps) {
   const [newTag, setNewTag] = useState('')
   const [isSavingTag, setIsSavingTag] = useState(false)
   const tagInputRef = useRef<HTMLInputElement>(null)
+
+  // バッジ編集モーダル
+  const [badgeModalOpen, setBadgeModalOpen] = useState(false)
 
   useEffect(() => {
     loadUser()
@@ -135,9 +152,7 @@ export function UserDetail({ displayName, onBack }: UserDetailProps) {
     }
   }
 
-  const handleToggleStaff = () => updateUser({ is_staff: !data?.user.is_staff })
   const handleToggleExcluded = () => updateUser({ is_excluded: !data?.user.is_excluded })
-  const handleSetRole = (role: 'regular' | 'visitor' | null) => updateUser({ performer_role: role })
 
   const handleSaveNotes = async () => {
     setIsSavingNotes(true)
@@ -168,7 +183,7 @@ export function UserDetail({ displayName, onBack }: UserDetailProps) {
   if (error) return <div className="user-detail-error">{error}</div>
   if (!data) return <div className="user-detail-error">ユーザーが見つかりません</div>
 
-  const { user, attendance_records } = data
+  const { user, badges, attendance_records } = data
   const totalAttendance = attendance_records.length
   const totalDuration = attendance_records.reduce((sum, r) => sum + (r.stay_duration || 0), 0)
   const avgDuration = totalAttendance > 0 ? totalDuration / totalAttendance : 0
@@ -182,9 +197,8 @@ export function UserDetail({ displayName, onBack }: UserDetailProps) {
         <div className="user-detail-title">
           <h2>{user.display_name}</h2>
           <div className="user-detail-badges">
-            {user.performer_role === 'regular' && <span className="badge badge-regular">🎤 レギュラー</span>}
-            {user.performer_role === 'visitor' && <span className="badge badge-visitor">🌟 ビジター</span>}
-            {user.is_staff && <span className="badge badge-staff">⭐ スタッフ</span>}
+            <BadgeChips badges={badges} />
+            {user.is_staff && <span className="badge badge-staff">⭐ スタッフ(旧)</span>}
             {user.is_excluded && <span className="badge badge-excluded">🚫 分析除外</span>}
             {user.tags?.map(tag => (
               <span key={tag} className="badge badge-tag">{tag}</span>
@@ -234,36 +248,16 @@ export function UserDetail({ displayName, onBack }: UserDetailProps) {
         <h3>ユーザー設定</h3>
 
         <div className="settings-row">
-          {/* 出演者ロール */}
+          {/* バッジ（出演者・関係者・スタッフ・要注意） */}
           <div className="setting-item">
-            <div className="setting-label">出演者ロール</div>
-            <div className="setting-desc">出演者一覧に表示されます</div>
-            <div className="role-buttons">
-              <button
-                className={`toggle-btn ${user.performer_role === 'regular' ? 'toggle-regular-on' : 'toggle-off'}`}
-                onClick={() => handleSetRole(user.performer_role === 'regular' ? null : 'regular')}
-              >
-                🎤 レギュラー
-              </button>
-              <button
-                className={`toggle-btn ${user.performer_role === 'visitor' ? 'toggle-visitor-on' : 'toggle-off'}`}
-                onClick={() => handleSetRole(user.performer_role === 'visitor' ? null : 'visitor')}
-              >
-                🌟 ビジター
+            <div className="setting-label">バッジ</div>
+            <div className="setting-desc">出演者（シリーズ別）・マネージャー・スタッフ・要注意</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <BadgeChips badges={badges} />
+              <button className="btn btn-sm btn-secondary" onClick={() => setBadgeModalOpen(true)}>
+                🏷 バッジ編集
               </button>
             </div>
-          </div>
-
-          {/* スタッフ */}
-          <div className="setting-item">
-            <div className="setting-label">スタッフ</div>
-            <div className="setting-desc">スタッフとしてマーク</div>
-            <button
-              className={`toggle-btn ${user.is_staff ? 'toggle-on' : 'toggle-off'}`}
-              onClick={handleToggleStaff}
-            >
-              {user.is_staff ? '⭐ スタッフ解除' : '⭐ スタッフに設定'}
-            </button>
           </div>
 
           {/* 分析除外 */}
@@ -359,9 +353,9 @@ export function UserDetail({ displayName, onBack }: UserDetailProps) {
         )}
       </div>
 
-      {/* 来場履歴 */}
+      {/* 来場履歴（イベント別・1イベント=1行） */}
       <div className="user-detail-attendance">
-        <h3>来場履歴</h3>
+        <h3>来場履歴 <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.6 }}>イベント別（再入場は「入退場」列に集約）</span></h3>
         {attendance_records.length === 0 ? (
           <p className="text-muted">来場記録がありません</p>
         ) : (
@@ -374,6 +368,24 @@ export function UserDetail({ displayName, onBack }: UserDetailProps) {
           />
         )}
       </div>
+
+      {/* バッジ・タグ編集モーダル */}
+      {badgeModalOpen && (
+        <BadgeEditorModal
+          displayName={user.display_name}
+          badges={badges}
+          tags={user.tags ?? []}
+          allTags={user.tags ?? []}
+          onClose={() => setBadgeModalOpen(false)}
+          onChange={patch => {
+            setData(prev => prev ? {
+              ...prev,
+              badges: patch.badges ?? prev.badges,
+              user: patch.tags ? { ...prev.user, tags: patch.tags } : prev.user,
+            } : prev)
+          }}
+        />
+      )}
     </div>
   )
 }

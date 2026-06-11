@@ -286,13 +286,15 @@ router.get('/', async (req, res) => {
   }
 })
 
+// イベント単位の来場記録（1イベント=1行。ログファイル/入退場ペア単位ではなく夜単位で集計）
 interface UserAttendanceRecord {
   event_id: number
   event_name: string
   event_date: string
-  join_time: string
-  leave_time: string | null
-  stay_duration: number | null
+  first_join: string        // そのイベントでの初入場
+  last_leave: string | null // 最終退場（未記録なら null）
+  stay_duration: number     // 合計滞在（分・再入場分を合算）
+  entries: number           // 入場回数（再入場含む）
 }
 
 router.get('/:displayName', async (req, res) => {
@@ -332,41 +334,57 @@ router.get('/:displayName', async (req, res) => {
       const eventData = eventMap.get(event_id)
       if (!eventData) continue
 
-      let joinTime: string | null = null
+      // イベント単位で集計: 入場回数・初入場〜最終退場・合計滞在（再入場を合算）
+      let entries = 0
+      let totalStay = 0
+      let firstJoin: string | null = null
+      let lastLeave: string | null = null
+      let openJoin: string | null = null
+
       for (const pe of eventPlayerEvents) {
         if (pe.event_type === 'join') {
-          joinTime = pe.timestamp
-        } else if (pe.event_type === 'leave' && joinTime) {
-          const stayMinutes = Math.max(0, (new Date(pe.timestamp).getTime() - new Date(joinTime).getTime()) / 60000)
-          attendanceRecords.push({
-            event_id,
-            event_name: eventData.name,
-            event_date: eventData.date,
-            join_time: joinTime,
-            leave_time: pe.timestamp,
-            stay_duration: Math.round(stayMinutes * 10) / 10,
-          })
-          joinTime = null
+          entries++
+          if (!firstJoin) firstJoin = pe.timestamp
+          openJoin = pe.timestamp
+        } else if (pe.event_type === 'leave') {
+          lastLeave = pe.timestamp
+          if (openJoin) {
+            const mins = (new Date(pe.timestamp).getTime() - new Date(openJoin).getTime()) / 60000
+            if (mins > 0 && mins <= 720) totalStay += mins
+            openJoin = null
+          }
         }
       }
-
-      if (joinTime) {
+      // 退場記録が無いまま終わった場合は、そのイベント内の最後の記録までを滞在として加算
+      if (openJoin) {
         const lastTimestamp = eventPlayerEvents[eventPlayerEvents.length - 1].timestamp
-        const stayMinutes = Math.max(0, (new Date(lastTimestamp).getTime() - new Date(joinTime).getTime()) / 60000)
-        attendanceRecords.push({
-          event_id,
-          event_name: eventData.name,
-          event_date: eventData.date,
-          join_time: joinTime,
-          leave_time: null,
-          stay_duration: Math.round(stayMinutes * 10) / 10,
-        })
+        const mins = (new Date(lastTimestamp).getTime() - new Date(openJoin).getTime()) / 60000
+        if (mins > 0 && mins <= 720) totalStay += mins
       }
+
+      if (entries === 0 || !firstJoin) continue
+      attendanceRecords.push({
+        event_id,
+        event_name: eventData.name,
+        event_date: eventData.date,
+        first_join: firstJoin,
+        last_leave: lastLeave,
+        stay_duration: Math.round(totalStay * 10) / 10,
+        entries,
+      })
     }
 
     attendanceRecords.sort((a, b) => new Date(b.event_date).getTime() - new Date(a.event_date).getTime())
 
-    res.json({ success: true, data: { user, attendance_records: attendanceRecords }, timestamp: new Date().toISOString() })
+    res.json({
+      success: true,
+      data: {
+        user,
+        badges: await getBadgesForUser(user.display_name),
+        attendance_records: attendanceRecords,
+      },
+      timestamp: new Date().toISOString(),
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     res.status(500).json({ success: false, error: message, timestamp: new Date().toISOString() })
