@@ -46,53 +46,40 @@ interface BadgeEditorProps {
 export function BadgeEditorModal({ displayName, badges, tags, allTags, onClose, onChange }: BadgeEditorProps) {
   const { seriesList } = useSeries()
   const [busy, setBusy] = useState(false)
-  const [selectedTypes, setSelectedTypes] = useState<Set<BadgeType>>(new Set())
   const [series, setSeries] = useState('')
   const [note, setNote] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  // ユーザー一覧のキャッシュは消さない（一覧側が手元の状態とキャッシュを直接更新する＝
+  // ページ位置を保ったまま、リロードまではキャッシュ表示でよい方針）。
+  // 出演者ページとアラートは安いので再取得させる。
   const invalidateCaches = () => {
-    dataCache.deletePrefix('users')
     dataCache.deletePrefix('performers:')
     dataCache.delete('citizenship-alerts')
   }
 
-  const toggleType = (t: BadgeType) => {
-    setSelectedTypes(prev => {
-      const next = new Set(prev)
-      next.has(t) ? next.delete(t) : next.add(t)
-      return next
-    })
-  }
+  const badgeKey = (t: BadgeType) => (BADGE_META[t].scoped ? series : '')
+  const hasBadge = (t: BadgeType) => badges.some(b => b.badge_type === t && b.series === badgeKey(t))
 
-  // 選択中の種別をまとめて付与（シリーズはスコープ対象の種別にのみ適用）
-  const addSelected = async () => {
-    if (selectedTypes.size === 0) return
+  // チップをクリック＝即付け外し（付いていれば外す・なければ付ける）
+  const toggleBadge = async (t: BadgeType) => {
     setBusy(true)
     setError(null)
+    const exists = hasBadge(t)
     try {
-      let latest: UserBadge[] | null = null
-      for (const t of selectedTypes) {
-        const res = await fetch(`/api/users/${encodeURIComponent(displayName)}/badges`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            badge_type: t,
-            series: BADGE_META[t].scoped ? series : '',
-            note: note.trim() || undefined,
-          }),
-        })
-        const json = await res.json()
-        if (!json.success) { setError(json.error ?? '保存に失敗しました'); return }
-        latest = json.data
-      }
-      if (latest) {
-        invalidateCaches()
-        onChange({ badges: latest })
-        setSelectedTypes(new Set())
-        setNote('')
-      }
+      const res = await fetch(`/api/users/${encodeURIComponent(displayName)}/badges`, {
+        method: exists ? 'DELETE' : 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          badge_type: t,
+          series: badgeKey(t),
+          ...(exists ? {} : { note: note.trim() || undefined }),
+        }),
+      })
+      const json = await res.json()
+      if (json.success) { invalidateCaches(); onChange({ badges: json.data }) }
+      else setError(json.error ?? '保存に失敗しました')
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -180,47 +167,46 @@ export function BadgeEditorModal({ displayName, badges, tags, allTags, onClose, 
           </div>
         )}
 
-        {/* バッジ追加（複数選択） */}
+        {/* バッジの付け外し（チップ＝即トグル） */}
         <div style={{ border: '1px solid rgba(128,128,128,0.2)', borderRadius: 8, padding: 10, marginBottom: 14 }}>
-          <p style={sectionTitle}>バッジを付与（複数選択OK）</p>
+          <p style={sectionTitle}>バッジの付け外し（クリックでON/OFF・複数可）</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 12, opacity: 0.7 }}>対象シリーズ:</span>
+            <select value={series} onChange={e => setSeries(e.target.value)} disabled={busy} style={{ padding: '5px 8px', borderRadius: 6 }} title="出演者系・関係者バッジの対象シリーズ（⚠️要注意は常に全体）">
+              <option value="">全イベント共通</option>
+              {seriesList.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
             {ALL_TYPES.map(t => {
               const m = BADGE_META[t]
-              const on = selectedTypes.has(t)
+              const on = hasBadge(t)
               return (
                 <button
                   key={t}
-                  onClick={() => toggleType(t)}
+                  onClick={() => toggleBadge(t)}
                   disabled={busy}
+                  title={on ? `クリックで外す（${m.label}${badgeKey(t) ? `・${badgeKey(t)}` : ''}）` : `クリックで付与（${m.label}${badgeKey(t) ? `・${badgeKey(t)}` : ''}）`}
                   style={{
                     padding: '5px 10px', borderRadius: 14, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                     background: on ? m.bg : 'transparent',
                     color: on ? m.color : 'inherit',
-                    border: on ? `1.5px solid ${m.color}` : '1px solid rgba(128,128,128,0.35)',
-                    opacity: on ? 1 : 0.75,
+                    border: on ? `1.5px solid ${m.color}` : '1px dashed rgba(128,128,128,0.4)',
+                    opacity: busy ? 0.5 : on ? 1 : 0.75,
                   }}
                 >
-                  {on ? '✓ ' : ''}{m.icon} {m.label}
+                  {on ? '✓ ' : '＋ '}{m.icon} {m.label}
                 </button>
               )
             })}
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select value={series} onChange={e => setSeries(e.target.value)} disabled={busy} style={{ padding: '5px 8px', borderRadius: 6 }} title="出演者系・関係者バッジの対象シリーズ（要注意には影響しない）">
-              <option value="">全イベント共通</option>
-              {seriesList.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <input
-              value={note}
-              onChange={e => setNote(e.target.value)}
-              disabled={busy}
-              placeholder="メモ（要注意の事由・誰のマネ等。任意）"
-              style={{ padding: '5px 8px', borderRadius: 6, flex: 1, minWidth: 160 }}
-            />
-            <button className="btn btn-primary" onClick={addSelected} disabled={busy || selectedTypes.size === 0}>
-              {busy ? '保存中...' : `＋ ${selectedTypes.size > 0 ? `${selectedTypes.size}件` : ''}付与`}
-            </button>
-          </div>
+          <input
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            disabled={busy}
+            placeholder="メモ（要注意の事由・誰のマネ等。付与時に保存・任意）"
+            style={{ padding: '5px 8px', borderRadius: 6, width: '100%', boxSizing: 'border-box' }}
+          />
         </div>
 
         {/* タグ */}

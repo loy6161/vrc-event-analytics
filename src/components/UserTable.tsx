@@ -693,6 +693,7 @@ export function UserTable({ onSelectUser }: UserTableProps) {
         defaultPageSize={20}
         emptyMessage="ユーザーが見つかりません"
         onRowClick={onSelectUser}
+        stateKey="users-list"
       />
 
       {/* バッジ・タグ編集モーダル */}
@@ -704,8 +705,13 @@ export function UserTable({ onSelectUser }: UserTableProps) {
           allTags={allTags}
           onClose={() => setEditingUser(null)}
           onChange={patch => {
-            // 一覧とモーダルの両方へ即時反映（サーバー再取得なし＝ページ位置も維持）
-            setAllUsers(prev => prev.map(u => u.display_name === editingUser.display_name ? { ...u, ...patch } : u))
+            // 一覧・モーダル・キャッシュへ即時反映（サーバー再取得なし＝ページ位置も維持。
+            // 別ページへ行って戻ってもキャッシュから編集済みの内容が出る）
+            setAllUsers(prev => {
+              const next = prev.map(u => u.display_name === editingUser.display_name ? { ...u, ...patch } : u)
+              dataCache.set(`users:${series}:${periodStart || ''}:${periodEnd || ''}`, next)
+              return next
+            })
             setEditingUser(prev => prev ? { ...prev, ...patch } : prev)
           }}
         />
