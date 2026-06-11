@@ -6,7 +6,10 @@ import {
   fetchConcurrentViewers,
   computeChatStats,
   extractVideoId,
+  resolveChannelId,
+  fetchChannelLiveVideoIds,
 } from '../services/youtube.js'
+import { findEventByDate } from '../db/queries.js'
 import {
   getStreams,
   getStreamById,
@@ -116,6 +119,63 @@ router.post('/streams', async (req: Request, res: Response) => {
     const stream = await createStream(meta, parsedEventId)
 
     ok(res, { stream, live_chat_id: meta.live_chat_id })
+  } catch (error) {
+    fail(res, toMessage(error))
+  }
+})
+
+/**
+ * POST /api/youtube/import-channel
+ * Body: { channels: string[] }  // チャンネルID UC... / @ハンドル / URL
+ *
+ * チャンネルの最近のライブ配信をまとめて取り込み、配信日と同じ日付のイベントへ自動紐づけ。
+ * - 既に登録済み(video_id)はスキップ
+ * - 配信日(actual_start優先, なければscheduled_start)の日付でイベントを検索し、1件あれば自動リンク
+ */
+router.post('/import-channel', async (req: Request, res: Response) => {
+  try {
+    const channels: string[] = Array.isArray(req.body?.channels) ? req.body.channels : []
+    const list = channels.map(c => String(c).trim()).filter(Boolean)
+    if (list.length === 0) return fail(res, 'channels[] が必要です（チャンネルID UC... か @ハンドル）', 400)
+
+    const result = { added: 0, linked: 0, skipped: 0, channels: 0, errors: [] as string[], events_linked: [] as { title: string; date: string; event: string }[] }
+
+    for (const ch of list) {
+      try {
+        const channelId = await resolveChannelId(ch)
+        const videoIds = await fetchChannelLiveVideoIds(channelId, 50)
+        result.channels++
+
+        for (const videoId of videoIds) {
+          const existing = await getStreamByVideoId(videoId)
+          if (existing) { result.skipped++; continue }
+
+          const meta = await fetchVideoMetadata(videoId)
+
+          // 配信日（YouTubeのISOはUTC。JSTの日付に寄せる）
+          const iso = meta.actual_start ?? meta.scheduled_start
+          let eventId: number | undefined
+          let linkedEventName: string | undefined
+          let day = ''
+          if (iso) {
+            day = new Date(new Date(iso).getTime() + 9 * 3600_000).toISOString().slice(0, 10) // JST日付
+            const ev = await findEventByDate(day)
+            if (ev) { eventId = ev.id; linkedEventName = ev.name }
+          }
+
+          await createStream(meta, eventId)
+          result.added++
+          if (eventId && linkedEventName) {
+            result.linked++
+            result.events_linked.push({ title: meta.title, date: day, event: linkedEventName })
+          }
+        }
+      } catch (e) {
+        result.errors.push(`${ch}: ${toMessage(e)}`)
+      }
+    }
+
+    ok(res, result)
   } catch (error) {
     fail(res, toMessage(error))
   }

@@ -5,6 +5,7 @@ import '../styles/Settings.css'
 interface SettingsData {
   vrchatLogDir: string
   youtubeApiKey: string
+  youtubeChannels: string
   autoMonitoring: boolean
   showApiKey: boolean
 }
@@ -15,6 +16,7 @@ export function Settings() {
   const [settings, setSettings] = useState<SettingsData>({
     vrchatLogDir: DEFAULT_LOG_DIR,
     youtubeApiKey: '',
+    youtubeChannels: '',
     autoMonitoring: false,
     showApiKey: false,
   })
@@ -46,6 +48,7 @@ export function Settings() {
       JSON.stringify({
         vrchatLogDir: settings.vrchatLogDir,
         youtubeApiKey: settings.youtubeApiKey,
+        youtubeChannels: settings.youtubeChannels,
         autoMonitoring: settings.autoMonitoring,
       })
     )
@@ -59,6 +62,7 @@ export function Settings() {
       const defaults = {
         vrchatLogDir: DEFAULT_LOG_DIR,
         youtubeApiKey: '',
+        youtubeChannels: '',
         autoMonitoring: false,
         showApiKey: false,
       }
@@ -177,6 +181,23 @@ export function Settings() {
                 APIキーはブラウザに保存されます。決して公開共有しないでください。
               </p>
             </div>
+          </div>
+
+          {/* YouTubeチャンネル（一括取得用） */}
+          <div className="form-group">
+            <label htmlFor="ytChannels">配信チャンネル（一括取得用）</label>
+            <textarea
+              id="ytChannels"
+              className="text-input"
+              rows={3}
+              value={settings.youtubeChannels}
+              onChange={e => handleInputChange('youtubeChannels', e.target.value)}
+              placeholder={'@your_handle\nUCxxxxxxxxxxxxxxxxxxxxxx\nhttps://www.youtube.com/@channel'}
+            />
+            <p className="input-hint">
+              配信を上げているチャンネルを1行に1つ（<code>@ハンドル</code> / チャンネルID <code>UC...</code> / URL）。
+              YouTubeページの「チャンネルから取得」で、最近のライブ配信をまとめて取り込み＆日付でイベント自動紐づけします。
+            </p>
           </div>
         </section>
 

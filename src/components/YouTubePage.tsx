@@ -57,6 +57,10 @@ export function YouTubePage() {
   const [linkEventId, setLinkEventId] = useState('')
   const [adding, setAdding] = useState(false)
 
+  // チャンネル一括取得
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState<string | null>(null)
+
   // Load API key from localStorage and initialize
   useEffect(() => {
     const settings = localStorage.getItem('vrc-analytics-settings')
@@ -134,6 +138,42 @@ export function YouTubePage() {
     }
   }
 
+  // 設定に登録したチャンネルから最近のライブ配信を一括取得＋日付でイベント自動紐づけ
+  const importFromChannels = async () => {
+    setImportMsg(null)
+    setError(null)
+    let channels: string[] = []
+    try {
+      const s = JSON.parse(localStorage.getItem('vrc-analytics-settings') ?? '{}')
+      channels = String(s.youtubeChannels ?? '').split(/[\n,]/).map((c: string) => c.trim()).filter(Boolean)
+    } catch { /* ignore */ }
+    if (channels.length === 0) {
+      setError('配信チャンネルが未設定です。⚙️設定の「配信チャンネル」に @ハンドル か UC... を1行ずつ入れて保存してください。')
+      return
+    }
+    setImporting(true)
+    try {
+      const res = await fetch(`${API}/youtube/import-channel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channels }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        const r = data.data
+        setImportMsg(`✓ ${r.channels}チャンネルを確認：${r.added}件を新規追加（うち${r.linked}件をイベントに自動紐づけ）・${r.skipped}件は登録済み${r.errors.length ? ` ／ ⚠️ ${r.errors.length}件エラー` : ''}`)
+        if (r.errors.length) setError(r.errors.join(' / '))
+        await fetchStreams()
+      } else {
+        setError(data.error)
+      }
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   const deleteStream = async (id: number) => {
     if (!confirm('このストリームと関連するすべてのチャットデータを削除しますか？')) return
     try {
@@ -183,9 +223,13 @@ export function YouTubePage() {
           <button className="btn-yt" onClick={addStream} disabled={adding || !videoUrl.trim()}>
             {adding ? '追加中...' : 'ストリームを追加'}
           </button>
+          <button className="btn-yt" onClick={importFromChannels} disabled={importing} title="設定に登録したチャンネルから最近のライブ配信を一括取得し、日付でイベントに自動紐づけ">
+            {importing ? '取得中...' : '📡 チャンネルから取得'}
+          </button>
         </div>
       </div>
 
+      {importMsg && <div className="yt-error" style={{ background: 'rgba(39,174,96,0.12)', color: '#27ae60' }}>{importMsg}</div>}
       {error && <div className="yt-error">{error}</div>}
 
       {loading ? (
