@@ -34,8 +34,17 @@ function mapEvent(row: any): Event {
     tags: jsonToTags(row.tags),
     series: row.series ?? undefined,
     format: row.format ?? undefined,
+    shared_event_id: row.shared_event_id ?? undefined,
     created_at: row.created_at,
   }
+}
+
+// 台帳スラッグを設定（日付照合の自動付与・バックフィル用）
+export async function setEventSharedId(eventId: number, sharedEventId: string | null): Promise<void> {
+  await getDatabase().execute({
+    sql: 'UPDATE events SET shared_event_id = ? WHERE id = ?',
+    args: [sharedEventId, eventId],
+  })
 }
 
 function mapUser(row: any): User {

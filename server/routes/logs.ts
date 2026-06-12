@@ -12,6 +12,7 @@ import {
   type ParsedPlayerEvent,
   type WorldSession,
 } from '../services/log-parser.js'
+import { fetchSharedEvents, matchEditionForDate } from '../services/shared-events.js'
 import {
   createEvent,
   getEventById,
@@ -19,6 +20,7 @@ import {
   updateEvent,
   recomputeEventTimespan,
   inferSeries,
+  setEventSharedId,
   isLogImported,
   recordImportedLog,
   getImportedLogs,
@@ -80,6 +82,9 @@ async function saveSessionsToDB(
     avatarByDay.get(day)!.push(sw)
   }
 
+  // 台帳は1回だけ取得して使い回す（読み取り失敗は紐づけスキップで握りつぶす）
+  const ledger = await fetchSharedEvents().catch(() => [])
+
   const createdEvents: SaveSessionsResult['createdEvents'] = []
   let totalInserted = 0
   let avatarSwitchesInserted = 0
@@ -129,6 +134,13 @@ async function saveSessionsToDB(
         instance_id: rep.instanceId, region: rep.region, access_type: rep.accessType,
         series,
       })
+    }
+
+    // 共有イベント台帳(shared.events)へ日付照合で自動紐づけ（横断レポートE5の結合キー）。
+    // 未紐づけのときだけ付与（手動で外した／別エディションに付け替えた場合は尊重）。
+    if (!target.shared_event_id) {
+      const ed = matchEditionForDate(ledger, day)
+      if (ed) await setEventSharedId(target.id, ed.id)
     }
 
     createdEvents.push({ id: target.id, name: target.name, date: target.date, worldName: target.world_name, series: target.series, merged })

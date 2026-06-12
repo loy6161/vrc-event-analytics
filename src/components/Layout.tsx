@@ -78,7 +78,7 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <h2>VRChat Analytics</h2>
+        <h2>VRC Event Data</h2>
       </div>
       <SeriesSwitcher />
       <nav className="sidebar-nav">
@@ -108,7 +108,7 @@ export function Header() {
   return (
     <header className="header">
       <div className="header-left">
-        <h1 className="header-title">VRChat Event Analytics</h1>
+        <h1 className="header-title">VRC Event Data</h1>
         {/* 現在のスコープを全ページで常時表示（モード見落とし対策）。×で全体に戻る */}
         {series ? (
           <span className="scope-chip" title="表示中のシリーズ。×で全体に戻る">
