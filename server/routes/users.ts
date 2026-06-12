@@ -212,6 +212,44 @@ router.get('/performers', async (req, res) => {
   }
 })
 
+// 軽量版の名簿（外部ツール=loyall Data 用）。'/' は参加者ごとに滞在時間を
+// N+1で算出するため数分かかり、フロント直叩きでタイムアウトする。こちらは
+// 1本の集約クエリで「参加回数・入場回数・初/最終参加」だけを高速に返す（滞在時間は持たない）。
+// ?series= で対象シリーズに絞る（参加回数もそのシリーズ内で再計算）。
+router.get('/roster', async (req, res) => {
+  try {
+    const db = getDatabase()
+    const seriesRaw = req.query.series
+    const series = typeof seriesRaw === 'string' && seriesRaw.trim() ? seriesRaw.trim() : null
+
+    let sql = `SELECT display_name,
+                      COUNT(DISTINCT event_id) AS attendance_count,
+                      COUNT(*)                 AS entries,
+                      MIN(timestamp)           AS first_attendance,
+                      MAX(timestamp)           AS last_attendance
+               FROM player_events
+               WHERE event_type = 'join' AND event_id IS NOT NULL AND event_id != 0`
+    const args: any[] = []
+    if (series) { sql += ` AND event_id IN (SELECT id FROM events WHERE series = ?)`; args.push(series) }
+    sql += ` GROUP BY display_name ORDER BY attendance_count DESC`
+
+    const result = await db.execute({ sql, args })
+    const badgesByUser = await getAllBadgesByUser()
+    const data = (result.rows as any[]).map((r) => ({
+      display_name: r.display_name,
+      attendance_count: Number(r.attendance_count) || 0,
+      entries: Number(r.entries) || 0,
+      first_attendance: r.first_attendance ?? null,
+      last_attendance: r.last_attendance ?? null,
+      badges: badgesByUser.get(r.display_name) ?? [],
+    }))
+    res.json({ success: true, data, timestamp: new Date().toISOString() })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    res.status(500).json({ success: false, error: message, timestamp: new Date().toISOString() })
+  }
+})
+
 router.get('/', async (req, res) => {
   try {
     const db = getDatabase()
