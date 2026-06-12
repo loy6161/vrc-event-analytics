@@ -55,11 +55,13 @@ function computeEventStats(rawEvents: RawPlayerEvent[]): EventStats {
   const unique_attendees = uniqueKeys.size
   const total_attendees = unique_attendees
 
-  let concurrent = 0, peak_concurrent = 0
+  // ピーク同接も在場集合で数える（computeTimeline と同じ理由。±1だとleave欠落で実人数超え）
+  let peak_concurrent = 0
+  const present = new Set<string>()
   for (const e of sorted) {
-    concurrent += e.event_type === 'join' ? 1 : -1
-    if (concurrent < 0) concurrent = 0
-    if (concurrent > peak_concurrent) peak_concurrent = concurrent
+    if (e.event_type === 'join') present.add(userKey(e))
+    else present.delete(userKey(e))
+    if (present.size > peak_concurrent) peak_concurrent = present.size
   }
 
   const lastTimestamp = sorted[sorted.length - 1].timestamp
@@ -142,12 +144,17 @@ function buildPresenceIntervals(sorted: RawPlayerEvent[], capMs: number): Presen
   return result
 }
 
+// 同時在場は「在場ユーザーの集合サイズ」で数える（±1カウントは禁止）。
+// VRChatログは退場(leave)が欠落しがち＆再入場で join が重複するため、±1だと
+// 実人数を大きく超えて積み上がる（実例: ユニーク54人でピーク126と算出されていた）。
+// Set方式なら 同一人物の重複join=無視 / leave欠落=その人が乗ったまま なので上限=ユニーク数。
 function computeTimeline(sorted: RawPlayerEvent[]) {
   const points: { timestamp: string; concurrent: number }[] = []
-  let concurrent = 0
+  const present = new Set<string>()
   for (const e of sorted) {
-    concurrent += e.event_type === 'join' ? 1 : -1
-    if (concurrent < 0) concurrent = 0
+    if (e.event_type === 'join') present.add(userKey(e))
+    else present.delete(userKey(e))
+    const concurrent = present.size
     if (points.length > 0 && points[points.length - 1].timestamp === e.timestamp) {
       points[points.length - 1].concurrent = concurrent
     } else {

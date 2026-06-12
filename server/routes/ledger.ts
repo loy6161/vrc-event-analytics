@@ -28,29 +28,50 @@ router.get('/events/:id/vrc-summary', async (req: Request, res: Response) => {
       args: [sharedEventId],
     })).rows as any[]
     if (evs.length === 0) {
-      return ok(res, { shared_event_id: sharedEventId, event_count: 0, unique_attendees: 0, total_joins: 0, sessions: [] })
+      return ok(res, { shared_event_id: sharedEventId, event_count: 0, unique_attendees: 0, total_joins: 0, peak_concurrent: 0, sessions: [] })
     }
     const ids = evs.map(e => e.id)
     const ph = ids.map(() => '?').join(',')
-    const joins = (await db.execute({
-      sql: `SELECT event_id, COALESCE(user_id, display_name) as key
+    // join/leave 両方を時系列で引く（ピーク同接の算出に leave が要る）
+    const rows = (await db.execute({
+      sql: `SELECT event_id, COALESCE(user_id, display_name) as key, event_type
             FROM player_events
-            WHERE event_type = 'join' AND event_id IN (${ph})
-              AND display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)`,
+            WHERE event_type IN ('join','leave') AND event_id IN (${ph})
+              AND display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)
+            ORDER BY timestamp ASC`,
       args: ids,
     })).rows as any[]
 
     const all = new Set<string>()
-    const perEvent = new Map<number, Set<string>>()
-    for (const id of ids) perEvent.set(id, new Set())
-    for (const j of joins) { all.add(String(j.key)); perEvent.get(j.event_id as number)?.add(String(j.key)) }
+    const perEvent = new Map<number, Set<string>>()        // ユニーク来場
+    const present = new Map<number, Set<string>>()         // いま在場（Set方式＝leave欠落でも実人数を超えない）
+    const peak = new Map<number, number>()                  // セッション別ピーク同接
+    let totalJoins = 0
+    for (const id of ids) { perEvent.set(id, new Set()); present.set(id, new Set()); peak.set(id, 0) }
+    for (const r of rows) {
+      const eid = r.event_id as number, k = String(r.key)
+      if (r.event_type === 'join') {
+        totalJoins++
+        all.add(k); perEvent.get(eid)?.add(k)
+        const p = present.get(eid)!
+        p.add(k)
+        if (p.size > peak.get(eid)!) peak.set(eid, p.size)
+      } else {
+        present.get(eid)?.delete(k)
+      }
+    }
 
     ok(res, {
       shared_event_id: sharedEventId,
       event_count: evs.length,
       unique_attendees: all.size,           // エディション全体の延べ重複なしユニーク
-      total_joins: joins.length,
-      sessions: evs.map(e => ({ id: e.id, name: e.name, date: e.date, unique_attendees: perEvent.get(e.id)!.size })),
+      total_joins: totalJoins,
+      peak_concurrent: Math.max(0, ...peak.values()),   // 期間中の最大同時在場
+      sessions: evs.map(e => ({
+        id: e.id, name: e.name, date: e.date,
+        unique_attendees: perEvent.get(e.id)!.size,
+        peak_concurrent: peak.get(e.id)!,
+      })),
     })
   } catch (err: any) { fail(res, err.message) }
 })
