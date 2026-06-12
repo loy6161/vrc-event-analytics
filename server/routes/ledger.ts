@@ -46,12 +46,14 @@ router.get('/events/:id/vrc-summary', async (req: Request, res: Response) => {
     const perEvent = new Map<number, Set<string>>()        // ユニーク来場
     const present = new Map<number, Set<string>>()         // いま在場（Set方式＝leave欠落でも実人数を超えない）
     const peak = new Map<number, number>()                  // セッション別ピーク同接
+    const joinsPerEvent = new Map<number, number>()         // セッション別の延べ入場（join数）
     let totalJoins = 0
-    for (const id of ids) { perEvent.set(id, new Set()); present.set(id, new Set()); peak.set(id, 0) }
+    for (const id of ids) { perEvent.set(id, new Set()); present.set(id, new Set()); peak.set(id, 0); joinsPerEvent.set(id, 0) }
     for (const r of rows) {
       const eid = r.event_id as number, k = String(r.key)
       if (r.event_type === 'join') {
         totalJoins++
+        joinsPerEvent.set(eid, (joinsPerEvent.get(eid) ?? 0) + 1)
         all.add(k); perEvent.get(eid)?.add(k)
         const p = present.get(eid)!
         p.add(k)
@@ -65,11 +67,12 @@ router.get('/events/:id/vrc-summary', async (req: Request, res: Response) => {
       shared_event_id: sharedEventId,
       event_count: evs.length,
       unique_attendees: all.size,           // エディション全体の延べ重複なしユニーク
-      total_joins: totalJoins,
+      total_joins: totalJoins,              // エディション全体の延べ入場
       peak_concurrent: Math.max(0, ...peak.values()),   // 期間中の最大同時在場
       sessions: evs.map(e => ({
         id: e.id, name: e.name, date: e.date,
         unique_attendees: perEvent.get(e.id)!.size,
+        total_joins: joinsPerEvent.get(e.id)!,
         peak_concurrent: peak.get(e.id)!,
       })),
     })
