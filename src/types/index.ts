@@ -14,6 +14,7 @@ export interface Event {
   tags?: string[] // JSON配列を配列型に変換
   series?: string // イベントシリーズ名（clubVERSE / theALL / VERSARY 等）。null=未分類
   format?: string // 開催形態（手動）: 事前申請制 など。ログ由来の access_type と併用
+  shared_event_id?: string // 共有イベント台帳(shared.events)のスラッグ。横断レポートの結合キー
   created_at: string // ISO 8601
 }
 

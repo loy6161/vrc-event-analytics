@@ -207,6 +207,12 @@ export async function initializeDatabase(): Promise<void> {
     await db.execute('ALTER TABLE events ADD COLUMN format TEXT')
   } catch { /* column already exists */ }
 
+  // 共有イベント台帳(shared.events)のスラッグ。日付照合で自動付与。横断レポート(E5)の結合キー
+  try {
+    await db.execute('ALTER TABLE events ADD COLUMN shared_event_id TEXT')
+  } catch { /* column already exists */ }
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_events_shared ON events(shared_event_id)')
+
   // access_type の精緻化バックフィル（冪等）。
   // 旧パーサーは group インスタンスを一律 'group' にしていたが、instance_id には
   // ~groupAccessType(plus|members|public) が残っているので、そこから Group+/Group公開 を復元する。
