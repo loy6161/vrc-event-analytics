@@ -28,7 +28,7 @@ router.get('/events/:id/vrc-summary', async (req: Request, res: Response) => {
       args: [sharedEventId],
     })).rows as any[]
     if (evs.length === 0) {
-      return ok(res, { shared_event_id: sharedEventId, event_count: 0, unique_attendees: 0, total_joins: 0, peak_concurrent: 0, sessions: [] })
+      return ok(res, { shared_event_id: sharedEventId, event_count: 0, unique_attendees: 0, total_joins: 0, peak_concurrent: 0, stay_person_hours: 0, sessions: [] })
     }
     const ids = evs.map(e => e.id)
     const ph = ids.map(() => '?').join(',')
@@ -37,7 +37,7 @@ router.get('/events/:id/vrc-summary', async (req: Request, res: Response) => {
     // 同接(peak_concurrent)は会場の実在人数なので除外ユーザーも数える。
     // ただし unique_attendees / total_joins は分析指標なので除外ユーザーを除く。
     const rows = (await db.execute({
-      sql: `SELECT event_id, COALESCE(user_id, display_name) as key, event_type,
+      sql: `SELECT event_id, COALESCE(user_id, display_name) as key, event_type, timestamp,
               CASE WHEN display_name IN (SELECT display_name FROM users WHERE is_excluded = 1) THEN 1 ELSE 0 END AS excluded
             FROM player_events
             WHERE event_type IN ('join','leave') AND event_id IN (${ph})
@@ -51,10 +51,25 @@ router.get('/events/:id/vrc-summary', async (req: Request, res: Response) => {
     const peak = new Map<number, number>()                  // セッション別ピーク同接（除外込み）
     const joinsPerEvent = new Map<number, number>()         // セッション別の延べ入場（join数・除外後）
     let totalJoins = 0
-    for (const id of ids) { perEvent.set(id, new Set()); present.set(id, new Set()); peak.set(id, 0); joinsPerEvent.set(id, 0) }
+    // 滞在人時（分析指標・除外ユーザーは含めない）。同一userKeyのjoin→次のleaveで1区間。
+    // 1区間720分cap、leave欠落はそのセッション最終timestampで閉じる。
+    const STAY_CAP_MIN = 720
+    const openJoin = new Map<number, Map<string, number>>() // eid → (key → joinのms)。未close区間の開始時刻
+    const stayMinPerEvent = new Map<number, number>()        // セッション別の合計滞在分（除外後）
+    const lastTsPerEvent = new Map<number, number>()         // セッション内の最終timestamp(ms)
+    for (const id of ids) {
+      perEvent.set(id, new Set()); present.set(id, new Set()); peak.set(id, 0); joinsPerEvent.set(id, 0)
+      openJoin.set(id, new Map()); stayMinPerEvent.set(id, 0); lastTsPerEvent.set(id, 0)
+    }
+    const addStay = (eid: number, startMs: number, endMs: number) => {
+      const mins = Math.min(STAY_CAP_MIN, Math.max(0, (endMs - startMs) / 60000))
+      stayMinPerEvent.set(eid, (stayMinPerEvent.get(eid) ?? 0) + mins)
+    }
     for (const r of rows) {
       const eid = r.event_id as number, k = String(r.key)
       const excluded = r.excluded === 1
+      const ts = Date.parse(String(r.timestamp))
+      if (Number.isFinite(ts) && ts > (lastTsPerEvent.get(eid) ?? 0)) lastTsPerEvent.set(eid, ts)
       if (r.event_type === 'join') {
         // 同接側（除外込み）
         const p = present.get(eid)!
@@ -65,11 +80,32 @@ router.get('/events/:id/vrc-summary', async (req: Request, res: Response) => {
           totalJoins++
           joinsPerEvent.set(eid, (joinsPerEvent.get(eid) ?? 0) + 1)
           all.add(k); perEvent.get(eid)?.add(k)
+          // 滞在区間の開始（既に開いていれば上書き＝直近のjoinを起点）
+          if (Number.isFinite(ts)) openJoin.get(eid)!.set(k, ts)
         }
       } else {
         present.get(eid)?.delete(k)
+        // 滞在区間を閉じる（除外後のみ）
+        if (!excluded) {
+          const oj = openJoin.get(eid)!
+          const startMs = oj.get(k)
+          if (startMs != null && Number.isFinite(ts)) {
+            addStay(eid, startMs, ts)
+            oj.delete(k)
+          }
+        }
       }
     }
+    // leave欠落の未close区間を、各セッションの最終timestampで閉じる
+    for (const id of ids) {
+      const oj = openJoin.get(id)!
+      const lastTs = lastTsPerEvent.get(id) ?? 0
+      for (const startMs of oj.values()) addStay(id, startMs, lastTs)
+      oj.clear()
+    }
+    let totalStayMin = 0
+    for (const id of ids) totalStayMin += stayMinPerEvent.get(id) ?? 0
+    const r1 = (m: number) => Math.round((m / 60) * 10) / 10  // 分→時 小数1桁
 
     ok(res, {
       shared_event_id: sharedEventId,
@@ -77,11 +113,13 @@ router.get('/events/:id/vrc-summary', async (req: Request, res: Response) => {
       unique_attendees: all.size,           // エディション全体の延べ重複なしユニーク
       total_joins: totalJoins,              // エディション全体の延べ入場
       peak_concurrent: Math.max(0, ...peak.values()),   // 期間中の最大同時在場
+      stay_person_hours: r1(totalStayMin),  // エディション全体の滞在人時（除外後・小数1桁）
       sessions: evs.map(e => ({
         id: e.id, name: e.name, date: e.date,
         unique_attendees: perEvent.get(e.id)!.size,
         total_joins: joinsPerEvent.get(e.id)!,
         peak_concurrent: peak.get(e.id)!,
+        stay_person_hours: r1(stayMinPerEvent.get(e.id) ?? 0),
       })),
     })
   } catch (err: any) { fail(res, err.message) }
