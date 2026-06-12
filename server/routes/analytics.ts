@@ -30,10 +30,40 @@ interface RawPlayerEvent {
   display_name: string
   event_type: 'join' | 'leave'
   timestamp: string
+  // 分析対象から除外するユーザー（主催・スタッフ・出演者 = users.is_excluded=1）。
+  // 注意: 同時在場（ピーク同接）には含める。除外は「分析しない」であって
+  // 「会場に居なかった」ではないため。体感人数＝会場に実在した人数と一致させる。
+  excluded?: boolean
 }
 
 function userKey(e: { user_id: string | null; display_name: string }): string {
   return e.user_id ?? e.display_name
+}
+
+// 同時在場（同接）は在場ユーザーの集合サイズで数える。
+// 重要: 除外ユーザー(excluded=true)も「会場に実在した body」なので集合に含める。
+// VRChatログは leave 欠落・再入場 join が多いため ±1 ではなく Set 方式（上限=ユニーク数）。
+function concurrencyPoints(rows: RawPlayerEvent[]): { timestamp: string; concurrent: number }[] {
+  const sorted = [...rows].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+  const points: { timestamp: string; concurrent: number }[] = []
+  const present = new Set<string>()
+  for (const e of sorted) {
+    if (e.event_type === 'join') present.add(userKey(e))
+    else present.delete(userKey(e))
+    const concurrent = present.size
+    if (points.length > 0 && points[points.length - 1].timestamp === e.timestamp) {
+      points[points.length - 1].concurrent = concurrent
+    } else {
+      points.push({ timestamp: e.timestamp, concurrent })
+    }
+  }
+  return points
+}
+
+function peakConcurrent(rows: RawPlayerEvent[]): number {
+  let peak = 0
+  for (const p of concurrencyPoints(rows)) if (p.concurrent > peak) peak = p.concurrent
+  return peak
 }
 
 function round1(n: number): number { return Math.round(n * 10) / 10 }
@@ -48,21 +78,18 @@ function computeEventStats(rawEvents: RawPlayerEvent[]): EventStats {
   const empty: EventStats = { total_attendees: 0, unique_attendees: 0, total_joins: 0, peak_concurrent: 0, avg_stay_duration: 0, median_stay_duration: 0, max_stay_duration: 0, reentry_rate: 0, hourly_attendance: [] }
   if (rawEvents.length === 0) return empty
 
-  const sorted = [...rawEvents].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+  // ピーク同接は除外ユーザー込み（会場に実在した人数）。
+  // それ以外の分析指標（ユニーク数・滞在・再入場・時間帯）は除外ユーザーを除く。
+  const peak_concurrent = peakConcurrent(rawEvents)
+
+  const analytical = rawEvents.filter(e => !e.excluded)
+  if (analytical.length === 0) return { ...empty, peak_concurrent }
+  const sorted = [...analytical].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
   const joins = sorted.filter(e => e.event_type === 'join')
   const total_joins = joins.length
   const uniqueKeys = new Set(joins.map(userKey))
   const unique_attendees = uniqueKeys.size
   const total_attendees = unique_attendees
-
-  // ピーク同接も在場集合で数える（computeTimeline と同じ理由。±1だとleave欠落で実人数超え）
-  let peak_concurrent = 0
-  const present = new Set<string>()
-  for (const e of sorted) {
-    if (e.event_type === 'join') present.add(userKey(e))
-    else present.delete(userKey(e))
-    if (present.size > peak_concurrent) peak_concurrent = present.size
-  }
 
   const lastTimestamp = sorted[sorted.length - 1].timestamp
   const lastMs = new Date(lastTimestamp).getTime()
@@ -144,27 +171,14 @@ function buildPresenceIntervals(sorted: RawPlayerEvent[], capMs: number): Presen
   return result
 }
 
-// 同時在場は「在場ユーザーの集合サイズ」で数える（±1カウントは禁止）。
-// VRChatログは退場(leave)が欠落しがち＆再入場で join が重複するため、±1だと
-// 実人数を大きく超えて積み上がる（実例: ユニーク54人でピーク126と算出されていた）。
-// Set方式なら 同一人物の重複join=無視 / leave欠落=その人が乗ったまま なので上限=ユニーク数。
-function computeTimeline(sorted: RawPlayerEvent[]) {
-  const points: { timestamp: string; concurrent: number }[] = []
-  const present = new Set<string>()
-  for (const e of sorted) {
-    if (e.event_type === 'join') present.add(userKey(e))
-    else present.delete(userKey(e))
-    const concurrent = present.size
-    if (points.length > 0 && points[points.length - 1].timestamp === e.timestamp) {
-      points[points.length - 1].concurrent = concurrent
-    } else {
-      points.push({ timestamp: e.timestamp, concurrent })
-    }
-  }
-  return points
+// タイムラインの同接は concurrencyPoints に委譲（除外ユーザー込み＝会場の実在人数）。
+function computeTimeline(rows: RawPlayerEvent[]) {
+  return concurrencyPoints(rows)
 }
 
-function computeUserRankings(events: RawPlayerEvent[], sortBy: 'attendance' | 'stay' = 'attendance'): UserRankingItem[] {
+function computeUserRankings(allEvents: RawPlayerEvent[], sortBy: 'attendance' | 'stay' = 'attendance'): UserRankingItem[] {
+  // ランキングは分析指標なので除外ユーザーを落とす
+  const events = allEvents.filter(e => !e.excluded)
   if (events.length === 0) return []
 
   const byEvent = new Map<string, RawPlayerEvent[]>()
@@ -231,16 +245,19 @@ function computeUserRankings(events: RawPlayerEvent[], sortBy: 'attendance' | 's
   return items
 }
 
+// 除外ユーザーも行ごと返す（excluded フラグ付き）。同接は会場の実在人数なので
+// 除外ユーザーも数える必要があり、SQLで落とすと取り返せないため。
+// 分析指標側（ユニーク数・ランキング・滞在等）は各関数で excluded=true を除く。
 async function fetchPlayerEvents(eventId: number): Promise<RawPlayerEvent[]> {
   const result = await getDatabase().execute({
-    sql: `SELECT pe.event_id, pe.user_id, pe.display_name, pe.event_type, pe.timestamp
+    sql: `SELECT pe.event_id, pe.user_id, pe.display_name, pe.event_type, pe.timestamp,
+            CASE WHEN pe.display_name IN (SELECT display_name FROM users WHERE is_excluded = 1) THEN 1 ELSE 0 END AS excluded
           FROM player_events pe
           WHERE pe.event_id = ?
-            AND pe.display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)
           ORDER BY pe.timestamp ASC`,
     args: [eventId],
   })
-  return result.rows as any[]
+  return (result.rows as any[]).map(r => ({ ...r, excluded: r.excluded === 1 }))
 }
 
 async function computePeriodStats(period: string, series?: string): Promise<PeriodStats> {
@@ -461,8 +478,10 @@ const STAY_BUCKETS = [
   { bucket: '2〜3時間', min: 120, max: 180 }, { bucket: '3時間以上', min: 180, max: Infinity },
 ]
 
-async function computeDetailedStats(rawEvents: RawPlayerEvent[], eventId: number): Promise<DetailedEventStats> {
+async function computeDetailedStats(allEvents: RawPlayerEvent[], eventId: number): Promise<DetailedEventStats> {
   const empty: DetailedEventStats = { stay_distribution: [], arrival_timeline: [], departure_timeline: [], first_timer_count: 0, returner_count: 0, first_timer_rate: 0, early_leaver_count: 0, early_leaver_rate: 0, engagement_score: 0, engagement_breakdown: { stay_score: 0, retention_score: 0, activity_score: 0 } }
+  // 詳細分析は除外ユーザーを落とす（同接以外は従来どおり）
+  const rawEvents = allEvents.filter(e => !e.excluded)
   if (rawEvents.length === 0) return empty
 
   const sorted = [...rawEvents].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
@@ -599,28 +618,31 @@ async function computeInsights(series?: string): Promise<EventInsights> {
   }> = []
 
   for (const ev of events) {
+    // 除外フラグも引く（同接は除外ユーザー込み、それ以外は除外）
     const rawResult = await db.execute({
-      sql: `SELECT event_type, timestamp, COALESCE(user_id, display_name) as key
+      sql: `SELECT event_type, timestamp, COALESCE(user_id, display_name) as key,
+              CASE WHEN display_name IN (SELECT display_name FROM users WHERE is_excluded = 1) THEN 1 ELSE 0 END AS excluded
             FROM player_events
             WHERE event_id = ?
-              AND display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)
             ORDER BY timestamp ASC`,
       args: [ev.id],
     })
-    const raw = rawResult.rows as any[]
+    const rawAll = rawResult.rows as any[]                       // 除外込み（同接用）
+    const raw = rawAll.filter(r => r.excluded !== 1)             // 除外後（分析用）
     const joins = raw.filter(r => r.event_type === 'join')
     const attendees = new Set<string>(joins.map(r => r.key))
     const total_joins = joins.length
 
-    // peak concurrent
-    let concurrent = 0, peak_concurrent = 0
-    for (const r of raw) {
-      concurrent += r.event_type === 'join' ? 1 : -1
-      if (concurrent < 0) concurrent = 0
-      if (concurrent > peak_concurrent) peak_concurrent = concurrent
+    // peak concurrent: 在場集合サイズ（Set方式）・除外ユーザー込み＝会場の実在人数
+    let peak_concurrent = 0
+    const presentSet = new Set<string>()
+    for (const r of rawAll) {
+      if (r.event_type === 'join') presentSet.add(r.key)
+      else presentSet.delete(r.key)
+      if (presentSet.size > peak_concurrent) peak_concurrent = presentSet.size
     }
 
-    // avg stay duration (minutes)
+    // avg stay duration (minutes) — 分析指標なので除外後の raw を使う
     const lastMs = raw.length > 0 ? new Date(raw[raw.length - 1].timestamp).getTime() : 0
     const pending = new Map<string, number[]>()
     const durations: number[] = []

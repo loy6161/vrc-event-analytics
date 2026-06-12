@@ -32,32 +32,40 @@ router.get('/events/:id/vrc-summary', async (req: Request, res: Response) => {
     }
     const ids = evs.map(e => e.id)
     const ph = ids.map(() => '?').join(',')
-    // join/leave 両方を時系列で引く（ピーク同接の算出に leave が要る）
+    // join/leave 両方を時系列で引く（ピーク同接の算出に leave が要る）。
+    // 除外ユーザー(is_excluded=1=主催/スタッフ/出演者)も行ごと引いて excluded フラグを付ける。
+    // 同接(peak_concurrent)は会場の実在人数なので除外ユーザーも数える。
+    // ただし unique_attendees / total_joins は分析指標なので除外ユーザーを除く。
     const rows = (await db.execute({
-      sql: `SELECT event_id, COALESCE(user_id, display_name) as key, event_type
+      sql: `SELECT event_id, COALESCE(user_id, display_name) as key, event_type,
+              CASE WHEN display_name IN (SELECT display_name FROM users WHERE is_excluded = 1) THEN 1 ELSE 0 END AS excluded
             FROM player_events
             WHERE event_type IN ('join','leave') AND event_id IN (${ph})
-              AND display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)
             ORDER BY timestamp ASC`,
       args: ids,
     })).rows as any[]
 
-    const all = new Set<string>()
-    const perEvent = new Map<number, Set<string>>()        // ユニーク来場
-    const present = new Map<number, Set<string>>()         // いま在場（Set方式＝leave欠落でも実人数を超えない）
-    const peak = new Map<number, number>()                  // セッション別ピーク同接
-    const joinsPerEvent = new Map<number, number>()         // セッション別の延べ入場（join数）
+    const all = new Set<string>()                          // 除外後ユニーク（分析）
+    const perEvent = new Map<number, Set<string>>()        // 除外後ユニーク来場（分析）
+    const present = new Map<number, Set<string>>()         // いま在場（除外ユーザー込み＝実在人数）
+    const peak = new Map<number, number>()                  // セッション別ピーク同接（除外込み）
+    const joinsPerEvent = new Map<number, number>()         // セッション別の延べ入場（join数・除外後）
     let totalJoins = 0
     for (const id of ids) { perEvent.set(id, new Set()); present.set(id, new Set()); peak.set(id, 0); joinsPerEvent.set(id, 0) }
     for (const r of rows) {
       const eid = r.event_id as number, k = String(r.key)
+      const excluded = r.excluded === 1
       if (r.event_type === 'join') {
-        totalJoins++
-        joinsPerEvent.set(eid, (joinsPerEvent.get(eid) ?? 0) + 1)
-        all.add(k); perEvent.get(eid)?.add(k)
+        // 同接側（除外込み）
         const p = present.get(eid)!
         p.add(k)
         if (p.size > peak.get(eid)!) peak.set(eid, p.size)
+        // 分析側（除外後）
+        if (!excluded) {
+          totalJoins++
+          joinsPerEvent.set(eid, (joinsPerEvent.get(eid) ?? 0) + 1)
+          all.add(k); perEvent.get(eid)?.add(k)
+        }
       } else {
         present.get(eid)?.delete(k)
       }
