@@ -24,7 +24,8 @@ router.get('/events/:id/vrc-summary', async (req: Request, res: Response) => {
     const sharedEventId = req.params.id
     const db = getDatabase()
     const evs = (await db.execute({
-      sql: 'SELECT id, name, date FROM events WHERE shared_event_id = ? ORDER BY date',
+      // access_type / world_name も返す（loyall のシリーズ/開催カードでインスタンス型バッジに使う）。追加のみ＝既存consumerに影響なし。
+      sql: 'SELECT id, name, date, access_type, world_name FROM events WHERE shared_event_id = ? ORDER BY date',
       args: [sharedEventId],
     })).rows as any[]
     if (evs.length === 0) {
@@ -116,6 +117,7 @@ router.get('/events/:id/vrc-summary', async (req: Request, res: Response) => {
       stay_person_hours: r1(totalStayMin),  // エディション全体の滞在人時（除外後・小数1桁）
       sessions: evs.map(e => ({
         id: e.id, name: e.name, date: e.date,
+        access_type: e.access_type ?? null, world_name: e.world_name ?? null,
         unique_attendees: perEvent.get(e.id)!.size,
         total_joins: joinsPerEvent.get(e.id)!,
         peak_concurrent: peak.get(e.id)!,
