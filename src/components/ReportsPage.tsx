@@ -140,7 +140,7 @@ export function ReportsPage() {
       return
     }
     try {
-      const url = series ? `/api/analytics/periods?series=${encodeURIComponent(series)}` : '/api/analytics/periods'
+      const url = series ? `/api/analytics/periods?brand=${encodeURIComponent(series)}` : '/api/analytics/periods'
       const res = await fetch(url).then(r => r.json())
       if (res.success) {
         dataCache.set(key, res.data)

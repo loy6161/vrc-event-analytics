@@ -134,11 +134,11 @@ export function UserTable({ onSelectUser }: UserTableProps) {
     setStayMinHours(''); setStayMaxHours('')
   }
 
-  const { series } = useSeries()
+  const { series: brand } = useSeries()
 
   const loadUsers = async (from?: string, to?: string, force = false) => {
-    // series 指定時は参加回数・滞在時間などの統計がそのシリーズ内だけで再計算される
-    const cacheKey = `users:${series}:${from ?? ''}:${to ?? ''}`
+    // brand 指定時は参加回数・滞在時間などの統計がそのブランド内だけで再計算される
+    const cacheKey = `users:${brand}:${from ?? ''}:${to ?? ''}`
     const cached = dataCache.get<UserWithStats[]>(cacheKey)
     if (cached && !force) {
       setAllUsers(cached)
@@ -151,7 +151,7 @@ export function UserTable({ onSelectUser }: UserTableProps) {
       const params = new URLSearchParams()
       if (from) params.set('from', from)
       if (to) params.set('to', to)
-      if (series) params.set('series', series)
+      if (brand) params.set('brand', brand)
       const url = `/api/users${params.toString() ? '?' + params.toString() : ''}`
       const res = await fetch(url)
       const data = await res.json()
@@ -174,10 +174,10 @@ export function UserTable({ onSelectUser }: UserTableProps) {
     loadUsers(periodStart || undefined, periodEnd || undefined, true)
   }
 
-  // 期間・シリーズが変わったらサーバーから再取得（統計値も絞り込み内で再計算）
+  // 期間・ブランドが変わったらサーバーから再取得（統計値も絞り込み内で再計算）
   useEffect(() => {
     loadUsers(periodStart || undefined, periodEnd || undefined)
-  }, [periodStart, periodEnd, series])
+  }, [periodStart, periodEnd, brand])
 
   useEffect(() => {
     let filtered = allUsers
@@ -304,13 +304,13 @@ export function UserTable({ onSelectUser }: UserTableProps) {
     try {
       const selectedUsers = users.filter(u => selected.has(u.id))
       if (badgeType === null) {
-        // 出演者系（レギュラー/ビジター/出演者）をこのシリーズから一括解除
+        // 出演者系（レギュラー/ビジター/出演者）をこのブランドから一括解除
         await Promise.all(selectedUsers.flatMap(user =>
           (['regular', 'visitor', 'performer'] as const).map(t =>
             fetch(`/api/users/${encodeURIComponent(user.display_name)}/badges`, {
               method: 'DELETE',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ badge_type: t, series }),
+              body: JSON.stringify({ badge_type: t, series: brand }),
             })
           )
         ))
@@ -319,7 +319,7 @@ export function UserTable({ onSelectUser }: UserTableProps) {
           fetch(`/api/users/${encodeURIComponent(user.display_name)}/badges`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ badge_type: badgeType, series }),
+            body: JSON.stringify({ badge_type: badgeType, series: brand }),
           })
         ))
       }
@@ -499,17 +499,17 @@ export function UserTable({ onSelectUser }: UserTableProps) {
 
             <span className="action-divider">|</span>
 
-            <span style={{ fontSize: 11, opacity: 0.6 }}>対象: {series || '全体'}</span>
-            <button onClick={() => bulkSetBadge('regular')} disabled={updating} className="btn btn-sm btn-regular" title={`選択ユーザーに⭐レギュラー（${series || '全体'}）を付与`}>
+            <span style={{ fontSize: 11, opacity: 0.6 }}>対象: {brand || '全体'}</span>
+            <button onClick={() => bulkSetBadge('regular')} disabled={updating} className="btn btn-sm btn-regular" title={`選択ユーザーに⭐レギュラー（${brand || '全体'}）を付与`}>
               ⭐ レギュラー
             </button>
-            <button onClick={() => bulkSetBadge('visitor')} disabled={updating} className="btn btn-sm btn-visitor" title={`選択ユーザーに🎟ビジター（${series || '全体'}）を付与`}>
+            <button onClick={() => bulkSetBadge('visitor')} disabled={updating} className="btn btn-sm btn-visitor" title={`選択ユーザーに🎟ビジター（${brand || '全体'}）を付与`}>
               🎟 ビジター
             </button>
-            <button onClick={() => bulkSetBadge('performer')} disabled={updating} className="btn btn-sm btn-secondary" title={`選択ユーザーに🎤出演者（${series || '全体'}）を付与`}>
+            <button onClick={() => bulkSetBadge('performer')} disabled={updating} className="btn btn-sm btn-secondary" title={`選択ユーザーに🎤出演者（${brand || '全体'}）を付与`}>
               🎤 出演者
             </button>
-            <button onClick={() => bulkSetBadge(null)} disabled={updating} className="btn btn-sm btn-secondary" title={`選択ユーザーの出演者系バッジ（${series || '全体'}）を解除`}>
+            <button onClick={() => bulkSetBadge(null)} disabled={updating} className="btn btn-sm btn-secondary" title={`選択ユーザーの出演者系バッジ（${brand || '全体'}）を解除`}>
               ✗ 出演者解除
             </button>
 
@@ -709,7 +709,7 @@ export function UserTable({ onSelectUser }: UserTableProps) {
             // 別ページへ行って戻ってもキャッシュから編集済みの内容が出る）
             setAllUsers(prev => {
               const next = prev.map(u => u.display_name === editingUser.display_name ? { ...u, ...patch } : u)
-              dataCache.set(`users:${series}:${periodStart || ''}:${periodEnd || ''}`, next)
+              dataCache.set(`users:${brand}:${periodStart || ''}:${periodEnd || ''}`, next)
               return next
             })
             setEditingUser(prev => prev ? { ...prev, ...patch } : prev)

@@ -30,7 +30,7 @@ export async function initializeDatabase(): Promise<void> {
       access_type TEXT,
       description TEXT,
       tags TEXT,
-      series TEXT,
+      brand TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -148,9 +148,9 @@ export async function initializeDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_chat_messages_time ON youtube_chat_messages(published_at);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_type ON youtube_chat_messages(message_type);
 
-    -- シリーズ（clubVERSE / theALL / VERSARY...）のマスタ。
-    -- events.series は name を非正規化で保持し、こちらは色・市民権判定対象・並び順などのメタを持つ。
-    CREATE TABLE IF NOT EXISTS series (
+    -- ブランド（clubVERSE / theALL / VERSARY...）のマスタ。
+    -- events.brand は name を非正規化で保持し、こちらは色・市民権判定対象・並び順などのメタを持つ。
+    CREATE TABLE IF NOT EXISTS brand (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
       color TEXT,
@@ -159,10 +159,10 @@ export async function initializeDatabase(): Promise<void> {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- ユーザーバッジ。出演者制度（シリーズ別）・関係者・スタッフ・要注意を一元管理。
+    -- ユーザーバッジ。出演者制度（ブランド別）・関係者・スタッフ・要注意を一元管理。
     -- badge_type: 'regular'(レギュラー出演) | 'visitor'(ビジター出演) | 'performer'(出演者・汎用)
     --           | 'manager'(出演者の関係者/マネージャー) | 'staff'(イベントスタッフ) | 'watch'(要注意人物)
-    -- series: 対象シリーズ名（'' = 全体）。レギュラー/ビジターは clubVERSE の制度なのでシリーズ別に持つ。
+    -- series: 対象ブランド名（'' = 全体）。レギュラー/ビジターは clubVERSE の制度なのでブランド別に持つ。
     -- note: 補足（誰のマネージャーか・要注意の事由 等）
     CREATE TABLE IF NOT EXISTS user_badges (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -198,9 +198,9 @@ export async function initializeDatabase(): Promise<void> {
   // CREATE TABLE IF NOT EXISTS は既存テーブルに列を足さないので、後付け列は ALTER で補う。
   // 既に列がある場合は "duplicate column name" で失敗するだけなので握りつぶす。
   try {
-    await db.execute('ALTER TABLE events ADD COLUMN series TEXT')
+    await db.execute('ALTER TABLE events ADD COLUMN brand TEXT')
   } catch { /* column already exists */ }
-  await db.execute('CREATE INDEX IF NOT EXISTS idx_events_series ON events(series)')
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_events_brand ON events(brand)')
 
   // 開催形態（手動）。事前申請制・招待制など、ログから取れない運用形態を記録する
   try {
@@ -227,12 +227,12 @@ export async function initializeDatabase(): Promise<void> {
     SELECT display_name, performer_role, 'clubVERSE' FROM users WHERE performer_role IS NOT NULL`)
   await db.execute(`UPDATE users SET performer_role = NULL WHERE performer_role IS NOT NULL`)
 
-  // 既存イベントで使われているシリーズ名を series マスタへ取り込む（初回のみ・色などは未設定）。
+  // 既存イベントで使われているブランド名を brand マスタへ取り込む（初回のみ・色などは未設定）。
   // 既に行があれば無視されるので何度実行しても安全。
   await db.execute(`
-    INSERT OR IGNORE INTO series (name)
-    SELECT DISTINCT series FROM events
-    WHERE series IS NOT NULL AND series != ''
+    INSERT OR IGNORE INTO brand (name)
+    SELECT DISTINCT brand FROM events
+    WHERE brand IS NOT NULL AND brand != ''
   `)
 }
 

@@ -14,9 +14,9 @@ export function EventList({ onSelect }: EventListProps) {
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [sortBy, setSortBy] = useState<'date' | 'name'>('date')
-  // シリーズ絞り込みはヘッダーのグローバルセレクタと連動。
+  // ブランド絞り込みはヘッダーのグローバルセレクタと連動。
   // 「全イベント」表示時のみ、未分類イベントだけを出すローカルトグルが使える（タグ付け作業用）
-  const { series: globalSeries, refreshSeriesList } = useSeries()
+  const { series: globalBrand, refreshSeriesList } = useSeries()
   const [showUnclassifiedOnly, setShowUnclassifiedOnly] = useState(false)
 
   // 結合機能
@@ -25,10 +25,10 @@ export function EventList({ onSelect }: EventListProps) {
   const [mergeTargetId, setMergeTargetId] = useState<number | null>(null)
   const [merging, setMerging] = useState(false)
 
-  // シリーズ一括設定
-  const [showSeriesDialog, setShowSeriesDialog] = useState(false)
-  const [seriesInput, setSeriesInput] = useState('')
-  const [settingSeries, setSettingSeries] = useState(false)
+  // ブランド一括設定
+  const [showBrandDialog, setShowBrandDialog] = useState(false)
+  const [brandInput, setBrandInput] = useState('')
+  const [settingBrand, setSettingBrand] = useState(false)
 
   useEffect(() => { fetchEvents() }, [])
 
@@ -86,22 +86,22 @@ export function EventList({ onSelect }: EventListProps) {
     }
   }
 
-  const handleSetSeries = async () => {
+  const handleSetBrand = async () => {
     const ids = [...selectedIds]
     if (ids.length === 0) return
-    setSettingSeries(true)
+    setSettingBrand(true)
     try {
-      const res = await fetch('/api/events/bulk-series', {
+      const res = await fetch('/api/events/bulk-brand', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids, series: seriesInput.trim() || null }),
+        body: JSON.stringify({ ids, brand: brandInput.trim() || null }),
       })
       const data = await res.json()
       if (data.success) {
-        setShowSeriesDialog(false)
+        setShowBrandDialog(false)
         setSelectedIds(new Set())
         dataCache.clear()
-        refreshSeriesList() // ヘッダーのシリーズ一覧に即反映
+        refreshSeriesList() // ヘッダーのブランド一覧に即反映
         await fetchEvents(true)
       } else {
         setError(data.error)
@@ -109,7 +109,7 @@ export function EventList({ onSelect }: EventListProps) {
     } catch (err: any) {
       setError(err.message)
     } finally {
-      setSettingSeries(false)
+      setSettingBrand(false)
     }
   }
 
@@ -138,15 +138,15 @@ export function EventList({ onSelect }: EventListProps) {
     }
   }
 
-  // 登録済みシリーズ（フィルタ選択肢用）
-  const allSeries = [...new Set(events.map(e => e.series).filter((s): s is string => !!s))].sort()
+  // 登録済みブランド（フィルタ選択肢用）
+  const allBrands = [...new Set(events.map(e => e.brand).filter((s): s is string => !!s))].sort()
 
   let filtered = events.filter(e =>
     e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     e.date.includes(searchTerm)
   )
-  if (globalSeries) filtered = filtered.filter(e => e.series === globalSeries)
-  else if (showUnclassifiedOnly) filtered = filtered.filter(e => !e.series)
+  if (globalBrand) filtered = filtered.filter(e => e.brand === globalBrand)
+  else if (showUnclassifiedOnly) filtered = filtered.filter(e => !e.brand)
 
   if (sortBy === 'name') {
     filtered = filtered.sort((a, b) => a.name.localeCompare(b.name))
@@ -188,7 +188,7 @@ export function EventList({ onSelect }: EventListProps) {
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
         />
-        {!globalSeries && (
+        {!globalBrand && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, whiteSpace: 'nowrap', cursor: 'pointer' }}>
             <input
               type="checkbox"
@@ -220,14 +220,14 @@ export function EventList({ onSelect }: EventListProps) {
           <button
             className="btn btn-merge"
             onClick={() => {
-              // 選択中イベントの既存シリーズを初期値に（揃っていれば）
+              // 選択中イベントの既存ブランドを初期値に（揃っていれば）
               const sel = events.filter(e => selectedIds.has(e.id))
-              const uniq = [...new Set(sel.map(e => e.series ?? ''))]
-              setSeriesInput(uniq.length === 1 ? uniq[0] : '')
-              setShowSeriesDialog(true)
+              const uniq = [...new Set(sel.map(e => e.brand ?? ''))]
+              setBrandInput(uniq.length === 1 ? uniq[0] : '')
+              setShowBrandDialog(true)
             }}
           >
-            🎪 シリーズを設定
+            🎪 ブランドを設定
           </button>
           <button className="btn-small" onClick={() => setSelectedIds(new Set())}>
             選択解除
@@ -275,12 +275,12 @@ export function EventList({ onSelect }: EventListProps) {
               </div>
               <div className="col-name">
                 <span className="event-name-text">{event.name}</span>
-                {event.series && (
+                {event.brand && (
                   <span style={{
                     marginLeft: 6, padding: '1px 8px', borderRadius: 10, fontSize: 11,
                     background: 'rgba(99,102,241,0.18)', color: '#6366f1', fontWeight: 600,
                     whiteSpace: 'nowrap',
-                  }}>🎪 {event.series}</span>
+                  }}>🎪 {event.brand}</span>
                 )}
                 {event.start_time && (
                   <span className="event-start-badge">🕐 {event.start_time}</span>
@@ -320,41 +320,41 @@ export function EventList({ onSelect }: EventListProps) {
         </div>
       )}
 
-      {/* シリーズ設定ダイアログ */}
-      {showSeriesDialog && (
-        <div className="merge-dialog-overlay" onClick={() => setShowSeriesDialog(false)}>
+      {/* ブランド設定ダイアログ */}
+      {showBrandDialog && (
+        <div className="merge-dialog-overlay" onClick={() => setShowBrandDialog(false)}>
           <div className="merge-dialog" onClick={e => e.stopPropagation()}>
-            <h3>🎪 シリーズを設定</h3>
+            <h3>🎪 ブランドを設定</h3>
             <p className="merge-dialog-desc">
-              選択した {selectedIds.size} 件のイベントにシリーズ名を設定します。<br />
-              シリーズはイベントの分類（clubVERSE / theALL / VERSARY 等）で、シリーズ別の比較・統計に使われます。
+              選択した {selectedIds.size} 件のイベントにブランド名を設定します。<br />
+              ブランドはイベントの分類（clubVERSE / theALL / VERSARY 等）で、ブランド別の比較・統計に使われます。
             </p>
 
             <div className="merge-field">
-              <label>シリーズ名（空にすると未分類に戻ります）</label>
+              <label>ブランド名（空にすると未分類に戻ります）</label>
               <input
-                value={seriesInput}
-                onChange={e => setSeriesInput(e.target.value)}
+                value={brandInput}
+                onChange={e => setBrandInput(e.target.value)}
                 placeholder="例：clubVERSE"
-                list="series-dialog-suggestions"
+                list="brand-dialog-suggestions"
                 className="search-input"
                 style={{ width: '100%' }}
               />
-              <datalist id="series-dialog-suggestions">
-                {allSeries.map(s => <option key={s} value={s} />)}
+              <datalist id="brand-dialog-suggestions">
+                {allBrands.map(s => <option key={s} value={s} />)}
               </datalist>
             </div>
 
             <div className="merge-dialog-actions">
-              <button className="btn" onClick={() => setShowSeriesDialog(false)}>
+              <button className="btn" onClick={() => setShowBrandDialog(false)}>
                 キャンセル
               </button>
               <button
                 className="btn btn-primary"
-                onClick={handleSetSeries}
-                disabled={settingSeries}
+                onClick={handleSetBrand}
+                disabled={settingBrand}
               >
-                {settingSeries ? '設定中...' : seriesInput.trim() ? `「${seriesInput.trim()}」に設定` : '未分類に戻す'}
+                {settingBrand ? '設定中...' : brandInput.trim() ? `「${brandInput.trim()}」に設定` : '未分類に戻す'}
               </button>
             </div>
           </div>

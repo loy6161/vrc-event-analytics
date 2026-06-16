@@ -3,7 +3,7 @@ import { RetentionChart } from './charts/RetentionChart'
 import { AttendanceTrendChart } from './charts/AttendanceTrendChart'
 import { EventTrendChart } from './charts/EventTrendChart'
 import { SeriesOverlayChart } from './charts/SeriesOverlayChart'
-import type { EventInsights, SeriesComparison, SeriesTrend, FormatComparison } from '../types/index.js'
+import type { EventInsights, BrandComparison, BrandTrend, FormatComparison } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
 import { useSeries } from '../contexts/SeriesContext'
 import '../styles/Charts.css'
@@ -257,11 +257,11 @@ export function InsightsPage() {
   const [panelOrder, setPanelOrder] = useState<string[]>(loadOrder)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
-  // シリーズ絞り込みはヘッダーのグローバルセレクタと連動（'' = 全イベント）。
-  // 絞ると成長率/リテンションもそのシリーズ内だけで計算される
+  // ブランド絞り込みはヘッダーのグローバルセレクタと連動（'' = 全イベント）。
+  // 絞ると成長率/リテンションもそのブランド内だけで計算される
   const { series: seriesFilter, setSeries: setSeriesFilter, colorOf } = useSeries()
-  const [comparison, setComparison] = useState<SeriesComparison[]>([])
-  const [trends, setTrends] = useState<SeriesTrend[]>([])
+  const [comparison, setComparison] = useState<BrandComparison[]>([])
+  const [trends, setTrends] = useState<BrandTrend[]>([])
   const [formats, setFormats] = useState<FormatComparison[]>([])
 
   const load = async (force = false) => {
@@ -270,7 +270,7 @@ export function InsightsPage() {
     if (cached && !force) { setInsights(cached); setLoading(false); return }
     try {
       const url = seriesFilter
-        ? `/api/analytics/insights?series=${encodeURIComponent(seriesFilter)}`
+        ? `/api/analytics/insights?brand=${encodeURIComponent(seriesFilter)}`
         : '/api/analytics/insights'
       const res = await fetch(url).then(r => r.json())
       if (res.success) { dataCache.set(key, res.data); setInsights(res.data) }
@@ -280,31 +280,31 @@ export function InsightsPage() {
   }
 
   const loadComparison = async (force = false) => {
-    const cached = dataCache.get<SeriesComparison[]>('series-comparison')
+    const cached = dataCache.get<BrandComparison[]>('brand-comparison')
     if (cached && !force) { setComparison(cached); return }
     try {
-      const res = await fetch('/api/analytics/series-comparison').then(r => r.json())
-      if (res.success) { dataCache.set('series-comparison', res.data); setComparison(res.data) }
+      const res = await fetch('/api/analytics/brand-comparison').then(r => r.json())
+      if (res.success) { dataCache.set('brand-comparison', res.data); setComparison(res.data) }
     } catch { /* 比較表は任意機能 */ }
   }
 
   const loadTrends = async (force = false) => {
-    const cached = dataCache.get<SeriesTrend[]>('series-trends')
+    const cached = dataCache.get<BrandTrend[]>('brand-trends')
     if (cached && !force) { setTrends(cached); return }
     try {
-      const res = await fetch('/api/analytics/series-trends').then(r => r.json())
-      if (res.success) { dataCache.set('series-trends', res.data); setTrends(res.data) }
+      const res = await fetch('/api/analytics/brand-trends').then(r => r.json())
+      if (res.success) { dataCache.set('brand-trends', res.data); setTrends(res.data) }
     } catch { /* 重ね描きは任意機能 */ }
   }
 
-  // 開催形態比較。グローバルのシリーズ絞り込みに追従（シリーズ内の形態比較も可能）
+  // 開催形態比較。グローバルのブランド絞り込みに追従（ブランド内の形態比較も可能）
   const loadFormats = async (force = false) => {
     const key = `format-comparison:${seriesFilter}`
     const cached = dataCache.get<FormatComparison[]>(key)
     if (cached && !force) { setFormats(cached); return }
     try {
       const url = seriesFilter
-        ? `/api/analytics/format-comparison?series=${encodeURIComponent(seriesFilter)}`
+        ? `/api/analytics/format-comparison?brand=${encodeURIComponent(seriesFilter)}`
         : '/api/analytics/format-comparison'
       const res = await fetch(url).then(r => r.json())
       if (res.success) { dataCache.set(key, res.data); setFormats(res.data) }
@@ -313,8 +313,8 @@ export function InsightsPage() {
 
   const refresh = () => {
     dataCache.deletePrefix('insights:')
-    dataCache.delete('series-comparison')
-    dataCache.delete('series-trends')
+    dataCache.delete('brand-comparison')
+    dataCache.delete('brand-trends')
     dataCache.deletePrefix('format-comparison:')
     setRefreshing(true)
     load(true)
@@ -434,10 +434,10 @@ export function InsightsPage() {
         </div>
       </div>
 
-      {/* シリーズ重ね描き（全体ビューのみ・2シリーズ以上）。GA4 Comparisons 相当 */}
-      {!seriesFilter && trends.filter(t => t.series).length >= 2 && (
+      {/* ブランド重ね描き（全体ビューのみ・2ブランド以上）。GA4 Comparisons 相当 */}
+      {!seriesFilter && trends.filter(t => t.brand).length >= 2 && (
         <div className="insights-recs-panel" style={{ marginBottom: 16 }}>
-          <h3 className="insights-section-title">🎪 シリーズ別の参加者推移（重ね描き）</h3>
+          <h3 className="insights-section-title">🎪 ブランド別の参加者推移（重ね描き）</h3>
           <SeriesOverlayChart trends={trends} colorOf={colorOf} height={280} />
           <p style={{ fontSize: 12, opacity: 0.55, margin: '8px 0 0' }}>
             シリーズごとに色分けした参加者数の推移。週次と年次など開催ペースの違うシリーズを1枚で比較できます。
@@ -445,15 +445,15 @@ export function InsightsPage() {
         </div>
       )}
 
-      {/* シリーズ比較（2グループ以上あるときだけ表示） */}
+      {/* ブランド比較（2グループ以上あるときだけ表示） */}
       {comparison.length >= 2 && (
         <div className="insights-recs-panel" style={{ marginBottom: 16 }}>
-          <h3 className="insights-section-title">🎪 シリーズ比較</h3>
+          <h3 className="insights-section-title">🎪 ブランド比較</h3>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ textAlign: 'right', opacity: 0.7 }}>
-                  <th style={{ textAlign: 'left', padding: '6px 8px' }}>シリーズ</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px' }}>ブランド</th>
                   <th style={{ padding: '6px 8px' }}>開催数</th>
                   <th style={{ padding: '6px 8px' }}>平均参加者</th>
                   <th style={{ padding: '6px 8px' }}>最大</th>
@@ -465,18 +465,18 @@ export function InsightsPage() {
               <tbody>
                 {comparison.map(c => (
                   <tr
-                    key={c.series || '__none__'}
+                    key={c.brand || '__none__'}
                     style={{
                       textAlign: 'right',
                       borderTop: '1px solid rgba(128,128,128,0.15)',
-                      background: seriesFilter && c.series === seriesFilter ? 'rgba(99,102,241,0.08)' : undefined,
-                      cursor: c.series ? 'pointer' : 'default',
+                      background: seriesFilter && c.brand === seriesFilter ? 'rgba(99,102,241,0.08)' : undefined,
+                      cursor: c.brand ? 'pointer' : 'default',
                     }}
-                    onClick={() => { if (c.series) setSeriesFilter(c.series === seriesFilter ? '' : c.series) }}
-                    title={c.series ? 'クリックでこのシリーズに絞り込み' : undefined}
+                    onClick={() => { if (c.brand) setSeriesFilter(c.brand === seriesFilter ? '' : c.brand) }}
+                    title={c.brand ? 'クリックでこのブランドに絞り込み' : undefined}
                   >
                     <td style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600 }}>
-                      {c.series || <span style={{ opacity: 0.5 }}>未分類</span>}
+                      {c.brand || <span style={{ opacity: 0.5 }}>未分類</span>}
                     </td>
                     <td style={{ padding: '6px 8px' }}>{c.event_count}回</td>
                     <td style={{ padding: '6px 8px' }}>{c.avg_attendees}人</td>
@@ -492,7 +492,7 @@ export function InsightsPage() {
             </table>
           </div>
           <p style={{ fontSize: 12, opacity: 0.55, margin: '8px 0 0' }}>
-            行をクリックするとそのシリーズだけのインサイトに切り替わります。リピート率＝そのシリーズに2回以上参加した人の割合。
+            行をクリックするとそのブランドだけのインサイトに切り替わります。リピート率＝そのブランドに2回以上参加した人の割合。
           </p>
         </div>
       )}

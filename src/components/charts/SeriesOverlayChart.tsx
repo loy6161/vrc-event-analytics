@@ -8,10 +8,10 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts'
-import type { SeriesTrend } from '../../types/index.js'
+import type { BrandTrend } from '../../types/index.js'
 
 interface SeriesOverlayChartProps {
-  trends: SeriesTrend[]
+  trends: BrandTrend[]
   colorOf: (name: string) => string
   height?: number
 }
@@ -26,23 +26,23 @@ function fmtDate(dateStr: string): string {
 }
 
 /**
- * シリーズ別の参加者推移を1枚に重ね描き（GA4 Comparisons 相当）。
- * 各イベントの日付を x 軸に共有し、シリーズごとに色分けしたラインを引く。
- * 開催日がずれるシリーズ同士でも、日付キーで揃えて点在表示する（connectNulls で線をつなぐ）。
+ * ブランド別の参加者推移を1枚に重ね描き（GA4 Comparisons 相当）。
+ * 各イベントの日付を x 軸に共有し、ブランドごとに色分けしたラインを引く。
+ * 開催日がずれるブランド同士でも、日付キーで揃えて点在表示する（connectNulls で線をつなぐ）。
  */
 export function SeriesOverlayChart({ trends, colorOf, height = 280 }: SeriesOverlayChartProps) {
-  const named = trends.filter(t => t.series && t.points.length > 0)
+  const named = trends.filter(t => t.brand && t.points.length > 0)
   if (named.length < 2) {
-    return <div className="chart-empty"><p>重ね描きには2つ以上のシリーズが必要です</p></div>
+    return <div className="chart-empty"><p>重ね描きには2つ以上のブランドが必要です</p></div>
   }
 
-  // 全日付を集めて行を作り、各シリーズの値を埋める
+  // 全日付を集めて行を作り、各ブランドの値を埋める
   const allDates = Array.from(new Set(named.flatMap(t => t.points.map(p => p.date)))).sort()
   const rows = allDates.map(date => {
     const row: Record<string, any> = { date: fmtDate(date) }
     for (const t of named) {
       const pt = t.points.find(p => p.date === date)
-      if (pt) row[t.series] = pt.unique_attendees
+      if (pt) row[t.brand] = pt.unique_attendees
     }
     return row
   })
@@ -65,10 +65,10 @@ export function SeriesOverlayChart({ trends, colorOf, height = 280 }: SeriesOver
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {named.map(t => (
             <Line
-              key={t.series}
+              key={t.brand}
               type="monotone"
-              dataKey={t.series}
-              stroke={colorOf(t.series)}
+              dataKey={t.brand}
+              stroke={colorOf(t.brand)}
               strokeWidth={2}
               dot={{ r: 3 }}
               activeDot={{ r: 5 }}

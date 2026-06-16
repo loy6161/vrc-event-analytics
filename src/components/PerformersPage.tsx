@@ -39,7 +39,7 @@ export function PerformersPage() {
     const cached = dataCache.get<Performer[]>(key)
     if (cached && !force) { setPerformers(cached); setLoading(false); return }
     try {
-      const url = series ? `/api/users/performers?series=${encodeURIComponent(series)}` : '/api/users/performers'
+      const url = series ? `/api/users/performers?brand=${encodeURIComponent(series)}` : '/api/users/performers'
       const data = await fetch(url).then(r => r.json())
       if (data.success) { dataCache.set(key, data.data); setPerformers(data.data) }
       else setError(data.error ?? 'Failed to load performers')

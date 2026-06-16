@@ -153,7 +153,7 @@ export function RankingPage() {
       setAvailableYears(years as string[])
       return
     }
-    const url = series ? `/api/analytics/periods?series=${encodeURIComponent(series)}` : '/api/analytics/periods'
+    const url = series ? `/api/analytics/periods?brand=${encodeURIComponent(series)}` : '/api/analytics/periods'
     fetch(url)
       .then(r => r.json())
       .then(res => {
@@ -172,7 +172,7 @@ export function RankingPage() {
     const params = new URLSearchParams()
     params.set('sort', sortBy)
     if (selectedYear !== 'all') params.set('period', selectedYear)
-    if (series) params.set('series', series)
+    if (series) params.set('brand', series)
     return params
   }
 
