@@ -24,11 +24,11 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
     world_name: '',
     description: '',
     tags: '',
-    series: '',
+    brand: '',
     format: '',
   })
-  // シリーズのサジェストはグローバル（ヘッダーと共通）から取得。保存後は一覧を更新
-  const { seriesList: seriesSuggestions, refreshSeriesList } = useSeries()
+  // ブランドのサジェストはグローバル（ヘッダーと共通）から取得。保存後は一覧を更新
+  const { seriesList: brandSuggestions, refreshSeriesList } = useSeries()
 
   useEffect(() => {
     if (eventId) {
@@ -52,7 +52,7 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
           world_name: event.world_name || '',
           description: event.description || '',
           tags: event.tags?.join(',') || '',
-          series: event.series || '',
+          brand: event.brand || '',
           format: event.format || '',
         })
       } else {
@@ -100,7 +100,7 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
         world_name: form.world_name || undefined,
         description: form.description || undefined,
         tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : undefined,
-        series: form.series.trim(), // '' = 未分類（解除）
+        brand: form.brand.trim(), // '' = 未分類（解除）
         format: form.format.trim(), // '' = 未設定（解除）
       }
 
@@ -263,19 +263,19 @@ export function EventForm({ eventId, onSuccess }: EventFormProps) {
         </div>
 
         <div className="form-group">
-          <label htmlFor="series">シリーズ名</label>
+          <label htmlFor="brand">ブランド名</label>
           <input
-            id="series"
-            name="series"
+            id="brand"
+            name="brand"
             type="text"
             placeholder="例：clubVERSE（空＝未分類）"
-            value={form.series}
+            value={form.brand}
             onChange={handleChange}
             disabled={submitting}
-            list="form-series-suggestions"
+            list="form-brand-suggestions"
           />
-          <datalist id="form-series-suggestions">
-            {seriesSuggestions.map(s => <option key={s} value={s} />)}
+          <datalist id="form-brand-suggestions">
+            {brandSuggestions.map(s => <option key={s} value={s} />)}
           </datalist>
         </div>
 

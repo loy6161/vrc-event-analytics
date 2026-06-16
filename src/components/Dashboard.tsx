@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { PeriodStats, SeriesComparison } from '../types/index.js'
+import type { PeriodStats, BrandComparison } from '../types/index.js'
 import { dataCache } from '../utils/dataCache.js'
 import { useSeries } from '../contexts/SeriesContext'
 import '../styles/Dashboard.css'
@@ -113,7 +113,7 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [prepAlerts, setPrepAlerts] = useState<PrepCitizenAlert[]>([])
   const [citizenshipTargets, setCitizenshipTargets] = useState<string[]>([])
-  const [seriesCards, setSeriesCards] = useState<SeriesComparison[]>([])
+  const [brandCards, setBrandCards] = useState<BrandComparison[]>([])
   const { series, setSeries, colorOf } = useSeries()
 
   const loadDashboard = async (force = false) => {
@@ -121,7 +121,7 @@ export function Dashboard() {
     const cached = dataCache.get<DashboardData>(key)
     if (cached && !force) { setData(cached); setLoading(false); return }
     try {
-      const url = series ? `/api/analytics/dashboard?series=${encodeURIComponent(series)}` : '/api/analytics/dashboard'
+      const url = series ? `/api/analytics/dashboard?brand=${encodeURIComponent(series)}` : '/api/analytics/dashboard'
       const res = await fetch(url).then(r => r.json())
       if (res.success) { dataCache.set(key, res.data); setData(res.data) }
       else setError(res.error ?? 'Failed to load dashboard')
@@ -139,28 +139,28 @@ export function Dashboard() {
     } catch { /* non-critical */ }
   }
 
-  // 全体ビュー時のみ: シリーズ内訳カード（Fathom の All sites view 相当）
-  const loadSeriesCards = async (force = false) => {
-    if (series) { setSeriesCards([]); return }
-    const cached = dataCache.get<SeriesComparison[]>('series-comparison')
-    if (cached && !force) { setSeriesCards(cached); return }
+  // 全体ビュー時のみ: ブランド内訳カード（Fathom の All sites view 相当）
+  const loadBrandCards = async (force = false) => {
+    if (series) { setBrandCards([]); return }
+    const cached = dataCache.get<BrandComparison[]>('brand-comparison')
+    if (cached && !force) { setBrandCards(cached); return }
     try {
-      const res = await fetch('/api/analytics/series-comparison').then(r => r.json())
-      if (res.success) { dataCache.set('series-comparison', res.data); setSeriesCards(res.data) }
+      const res = await fetch('/api/analytics/brand-comparison').then(r => r.json())
+      if (res.success) { dataCache.set('brand-comparison', res.data); setBrandCards(res.data) }
     } catch { /* non-critical */ }
   }
 
   const refresh = () => {
     dataCache.deletePrefix('dashboard:')
     dataCache.delete('citizenship-alerts')
-    dataCache.delete('series-comparison')
+    dataCache.delete('brand-comparison')
     setRefreshing(true)
     loadDashboard(true)
     loadAlerts(true)
-    loadSeriesCards(true)
+    loadBrandCards(true)
   }
 
-  useEffect(() => { setLoading(true); loadDashboard(); loadAlerts(); loadSeriesCards() }, [series])
+  useEffect(() => { setLoading(true); loadDashboard(); loadAlerts(); loadBrandCards() }, [series])
 
   if (loading) {
     return (
@@ -255,16 +255,16 @@ export function Dashboard() {
         </div>
       </section>
 
-      {/* シリーズ内訳（全体ビューのみ・Fathom の All sites view 相当）。クリックでそのシリーズへ切替 */}
-      {!series && seriesCards.filter(c => c.series).length > 0 && (
+      {/* ブランド内訳（全体ビューのみ・Fathom の All sites view 相当）。クリックでそのブランドへ切替 */}
+      {!series && brandCards.filter(c => c.brand).length > 0 && (
         <section className="dash-section">
-          <h2 className="dash-section-title">シリーズ別の概況</h2>
+          <h2 className="dash-section-title">ブランド別の概況</h2>
           <div className="dash-series-grid">
-            {seriesCards.filter(c => c.series).map(c => (
-              <button key={c.series} className="dash-series-card" onClick={() => setSeries(c.series)} title={`${c.series} に絞り込む`}>
+            {brandCards.filter(c => c.brand).map(c => (
+              <button key={c.brand} className="dash-series-card" onClick={() => setSeries(c.brand)} title={`${c.brand} に絞り込む`}>
                 <div className="dash-series-card-head">
-                  <span className="dash-series-card-dot" style={{ background: colorOf(c.series) }} />
-                  <span className="dash-series-card-name">{c.series}</span>
+                  <span className="dash-series-card-dot" style={{ background: colorOf(c.brand) }} />
+                  <span className="dash-series-card-name">{c.brand}</span>
                 </div>
                 <div className="dash-series-card-metrics">
                   <span><strong>{c.event_count}</strong>回</span>

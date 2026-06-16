@@ -18,9 +18,9 @@ function parseId(param: string): number | null {
   return isNaN(n) ? null : n
 }
 
-// ?series= クエリ（'' や未指定は undefined = 全イベント）
-function seriesParam(req: Request): string | undefined {
-  const s = req.query.series
+// ?brand= クエリ（'' や未指定は undefined = 全イベント）
+function brandParam(req: Request): string | undefined {
+  const s = req.query.brand
   return typeof s === 'string' && s.trim() ? s.trim() : undefined
 }
 
@@ -260,14 +260,14 @@ async function fetchPlayerEvents(eventId: number): Promise<RawPlayerEvent[]> {
   return (result.rows as any[]).map(r => ({ ...r, excluded: r.excluded === 1 }))
 }
 
-async function computePeriodStats(period: string, series?: string): Promise<PeriodStats> {
+async function computePeriodStats(period: string, brand?: string): Promise<PeriodStats> {
   const db = getDatabase()
 
   const eventsResult = await db.execute({
-    sql: series
-      ? `SELECT id, date FROM events WHERE date LIKE ? AND series = ? ORDER BY date`
+    sql: brand
+      ? `SELECT id, date FROM events WHERE date LIKE ? AND brand = ? ORDER BY date`
       : `SELECT id, date FROM events WHERE date LIKE ? ORDER BY date`,
-    args: series ? [`${period}%`, series] : [`${period}%`],
+    args: brand ? [`${period}%`, brand] : [`${period}%`],
   })
   const events = eventsResult.rows as any[]
   const event_count = events.length
@@ -294,10 +294,10 @@ async function computePeriodStats(period: string, series?: string): Promise<Peri
 
   let new_attendees = 0
   if (unique_attendees > 0) {
-    // series 指定時は「そのシリーズで初参加」を新規とみなす
+    // brand 指定時は「そのブランドで初参加」を新規とみなす
     const priorEventsResult = await db.execute(
-      series
-        ? { sql: `SELECT id FROM events WHERE date < ? AND series = ?`, args: [period, series] }
+      brand
+        ? { sql: `SELECT id FROM events WHERE date < ? AND brand = ?`, args: [period, brand] }
         : { sql: `SELECT id FROM events WHERE date < ?`, args: [period] }
     )
     const priorEvents = priorEventsResult.rows as any[]
@@ -371,12 +371,12 @@ router.get('/rankings', async (req: Request, res: Response) => {
     const sortBy = req.query.sort === 'stay' ? 'stay' : 'attendance'
     const limit = req.query.limit ? parseInt(String(req.query.limit), 10) : undefined
     const period = typeof req.query.period === 'string' ? req.query.period : undefined
-    const series = seriesParam(req)
+    const brand = brandParam(req)
 
     const conds: string[] = []
     const args: any[] = []
     if (period) { conds.push('date LIKE ?'); args.push(`${period}%`) }
-    if (series) { conds.push('series = ?'); args.push(series) }
+    if (brand) { conds.push('brand = ?'); args.push(brand) }
     const idsResult = await db.execute(
       conds.length > 0
         ? { sql: `SELECT id FROM events WHERE ${conds.join(' AND ')}`, args }
@@ -404,11 +404,11 @@ router.get('/rankings', async (req: Request, res: Response) => {
 router.get('/dashboard', async (req: Request, res: Response) => {
   try {
     const db = getDatabase()
-    const series = seriesParam(req)
-    // series 指定時は全集計をそのシリーズのイベントに限定する
-    const evWhere = series ? ' WHERE series = ?' : ''
-    const peInEvents = series ? ` AND event_id IN (SELECT id FROM events WHERE series = ?)` : ''
-    const sArgs = series ? [series] : []
+    const brand = brandParam(req)
+    // brand 指定時は全集計をそのブランドのイベントに限定する
+    const evWhere = brand ? ' WHERE brand = ?' : ''
+    const peInEvents = brand ? ` AND event_id IN (SELECT id FROM events WHERE brand = ?)` : ''
+    const sArgs = brand ? [brand] : []
 
     const totalEvents = ((await db.execute({ sql: `SELECT COUNT(*) as n FROM events${evWhere}`, args: sArgs })).rows[0] as any).n as number
     const totalVisits = ((await db.execute({ sql: `SELECT COUNT(*) as n FROM player_events WHERE event_type = 'join'${peInEvents}`, args: sArgs })).rows[0] as any).n as number
@@ -417,12 +417,12 @@ router.get('/dashboard', async (req: Request, res: Response) => {
 
     const recentEventsResult = await db.execute({
       sql: `
-      SELECT e.id, e.name, e.date, e.world_name, e.series,
+      SELECT e.id, e.name, e.date, e.world_name, e.brand,
         COUNT(DISTINCT CASE WHEN pe.event_type = 'join' THEN pe.display_name END) as unique_visitors,
         COUNT(CASE WHEN pe.event_type = 'join' THEN 1 END) as total_visits
       FROM events e
       LEFT JOIN player_events pe ON pe.event_id = e.id
-      ${series ? 'WHERE e.series = ?' : ''}
+      ${brand ? 'WHERE e.brand = ?' : ''}
       GROUP BY e.id
       ORDER BY e.date DESC
       LIMIT 5
@@ -435,12 +435,12 @@ router.get('/dashboard', async (req: Request, res: Response) => {
     const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`
 
-    const monthCond = series ? ` AND series = ?` : ''
+    const monthCond = brand ? ` AND brand = ?` : ''
     const hasCurrentMonth = (await db.execute({ sql: `SELECT 1 FROM events WHERE date LIKE ?${monthCond} LIMIT 1`, args: [`${currentMonth}%`, ...sArgs] })).rows.length > 0
     const hasPrevMonth = (await db.execute({ sql: `SELECT 1 FROM events WHERE date LIKE ?${monthCond} LIMIT 1`, args: [`${prevMonth}%`, ...sArgs] })).rows.length > 0
 
-    const currentMonthStats = hasCurrentMonth ? await computePeriodStats(currentMonth, series) : null
-    const prevMonthStats = hasPrevMonth ? await computePeriodStats(prevMonth, series) : null
+    const currentMonthStats = hasCurrentMonth ? await computePeriodStats(currentMonth, brand) : null
+    const prevMonthStats = hasPrevMonth ? await computePeriodStats(prevMonth, brand) : null
 
     ok(res, {
       total_events: totalEvents, total_visits: totalVisits, total_unique_visitors: totalUniqueVisitors, avg_per_event: avgPerEvent,
@@ -453,21 +453,21 @@ router.get('/period', async (req: Request, res: Response) => {
   const period = typeof req.query.period === 'string' ? req.query.period : null
   if (!period || !/^\d{4}(-\d{2})?$/.test(period)) return fail(res, 'period query parameter required (YYYY-MM or YYYY)', 400)
   try {
-    ok(res, await computePeriodStats(period, seriesParam(req)))
+    ok(res, await computePeriodStats(period, brandParam(req)))
   } catch (err: any) { fail(res, err.message) }
 })
 
 router.get('/periods', async (req: Request, res: Response) => {
   try {
     const db = getDatabase()
-    const series = seriesParam(req)
+    const brand = brandParam(req)
     const periodsResult = await db.execute(
-      series
-        ? { sql: `SELECT DISTINCT substr(date, 1, 7) as period FROM events WHERE series = ? ORDER BY period ASC`, args: [series] }
+      brand
+        ? { sql: `SELECT DISTINCT substr(date, 1, 7) as period FROM events WHERE brand = ? ORDER BY period ASC`, args: [brand] }
         : `SELECT DISTINCT substr(date, 1, 7) as period FROM events ORDER BY period ASC`
     )
     const periods = (periodsResult.rows as any[]).map(r => r.period)
-    const result = await Promise.all(periods.map(p => computePeriodStats(p, series)))
+    const result = await Promise.all(periods.map(p => computePeriodStats(p, brand)))
     ok(res, result)
   } catch (err: any) { fail(res, err.message) }
 })
@@ -598,14 +598,14 @@ async function computeDetailedStats(allEvents: RawPlayerEvent[], eventId: number
   return { stay_distribution, arrival_timeline, departure_timeline, first_timer_count, returner_count, first_timer_rate: round3(first_timer_rate), early_leaver_count, early_leaver_rate: round3(early_leaver_rate), engagement_score, engagement_breakdown: { stay_score, retention_score, activity_score } }
 }
 
-async function computeInsights(series?: string): Promise<EventInsights> {
+async function computeInsights(brand?: string): Promise<EventInsights> {
   const db = getDatabase()
 
-  // series 指定時はそのシリーズのイベントだけで成長率・リテンション・コミュニティを計算する。
-  // 週次イベントの「前回からの継続率」は同シリーズ内で比較するほうが正確になる。
+  // brand 指定時はそのブランドのイベントだけで成長率・リテンション・コミュニティを計算する。
+  // 週次イベントの「前回からの継続率」は同ブランド内で比較するほうが正確になる。
   const eventsResult = await db.execute(
-    series
-      ? { sql: 'SELECT * FROM events WHERE series = ? ORDER BY date ASC, start_time ASC', args: [series] }
+    brand
+      ? { sql: 'SELECT * FROM events WHERE brand = ? ORDER BY date ASC, start_time ASC', args: [brand] }
       : 'SELECT * FROM events ORDER BY date ASC, start_time ASC'
   )
   const events = eventsResult.rows as any[]
@@ -782,30 +782,30 @@ router.get('/events/:id/detailed', async (req: Request, res: Response) => {
 
 router.get('/insights', async (req: Request, res: Response) => {
   try {
-    const series = typeof req.query.series === 'string' && req.query.series.trim() ? req.query.series.trim() : undefined
-    ok(res, await computeInsights(series))
+    const brand = typeof req.query.brand === 'string' && req.query.brand.trim() ? req.query.brand.trim() : undefined
+    ok(res, await computeInsights(brand))
   } catch (err: any) { fail(res, err.message) }
 })
 
-// ── シリーズ比較 ───────────────────────────────────────────────────
-// シリーズ（clubVERSE / theALL / VERSARY...）ごとの集計を横並びで返す。
-// 未分類イベントは series='' として1グループにまとめる。
-export interface SeriesComparisonItem {
-  series: string            // '' = 未分類
+// ── ブランド比較 ───────────────────────────────────────────────────
+// ブランド（clubVERSE / theALL / VERSARY...）ごとの集計を横並びで返す。
+// 未分類イベントは brand='' として1グループにまとめる。
+export interface BrandComparisonItem {
+  brand: string             // '' = 未分類
   event_count: number
   first_date: string
   last_date: string
   avg_attendees: number     // 1回あたり平均ユニーク参加者
   max_attendees: number
   total_attendees: number   // 延べ（イベント×人）
-  unique_users: number      // シリーズ全体のユニーク参加者
-  repeat_rate: number       // シリーズ内で2回以上参加した人の割合
+  unique_users: number      // ブランド全体のユニーク参加者
+  repeat_rate: number       // ブランド内で2回以上参加した人の割合
 }
 
-router.get('/series-comparison', async (_req: Request, res: Response) => {
+router.get('/brand-comparison', async (_req: Request, res: Response) => {
   try {
     const db = getDatabase()
-    const events = (await db.execute('SELECT id, series, date FROM events')).rows as any[]
+    const events = (await db.execute('SELECT id, brand, date FROM events')).rows as any[]
     if (events.length === 0) return ok(res, [])
 
     const joins = (await db.execute(
@@ -815,29 +815,29 @@ router.get('/series-comparison', async (_req: Request, res: Response) => {
          AND pe.display_name NOT IN (SELECT display_name FROM users WHERE is_excluded = 1)`
     )).rows as any[]
 
-    // event_id → series ('' = 未分類)
-    const evSeries = new Map<number, string>()
+    // event_id → brand ('' = 未分類)
+    const evBrand = new Map<number, string>()
     const evDate = new Map<number, string>()
     for (const e of events) {
-      evSeries.set(e.id as number, (e.series as string) ?? '')
+      evBrand.set(e.id as number, (e.brand as string) ?? '')
       evDate.set(e.id as number, e.date as string)
     }
 
-    // series → { eventId → Set<userKey> }
+    // brand → { eventId → Set<userKey> }
     const groups = new Map<string, Map<number, Set<string>>>()
     for (const e of events) {
-      const s = (e.series as string) ?? ''
-      if (!groups.has(s)) groups.set(s, new Map())
-      groups.get(s)!.set(e.id as number, new Set())
+      const b = (e.brand as string) ?? ''
+      if (!groups.has(b)) groups.set(b, new Map())
+      groups.get(b)!.set(e.id as number, new Set())
     }
     for (const j of joins) {
-      const s = evSeries.get(j.event_id as number)
-      if (s === undefined) continue
-      groups.get(s)!.get(j.event_id as number)!.add(String(j.key))
+      const b = evBrand.get(j.event_id as number)
+      if (b === undefined) continue
+      groups.get(b)!.get(j.event_id as number)!.add(String(j.key))
     }
 
-    const result: SeriesComparisonItem[] = []
-    for (const [s, perEvent] of groups) {
+    const result: BrandComparisonItem[] = []
+    for (const [b, perEvent] of groups) {
       const eventIds = Array.from(perEvent.keys())
       const dates = eventIds.map(id => evDate.get(id)!).sort()
       const sizes = eventIds.map(id => perEvent.get(id)!.size)
@@ -849,7 +849,7 @@ router.get('/series-comparison', async (_req: Request, res: Response) => {
       let repeaters = 0
       for (const c of userEvents.values()) if (c >= 2) repeaters++
       result.push({
-        series: s,
+        brand: b,
         event_count: eventIds.length,
         first_date: dates[0] ?? '',
         last_date: dates[dates.length - 1] ?? '',
@@ -862,7 +862,7 @@ router.get('/series-comparison', async (_req: Request, res: Response) => {
     }
 
     // イベント数の多い順、未分類は最後
-    result.sort((a, b) => (a.series === '' ? 1 : 0) - (b.series === '' ? 1 : 0) || b.event_count - a.event_count)
+    result.sort((a, b) => (a.brand === '' ? 1 : 0) - (b.brand === '' ? 1 : 0) || b.event_count - a.event_count)
     ok(res, result)
   } catch (err: any) { fail(res, err.message) }
 })
@@ -870,14 +870,14 @@ router.get('/series-comparison', async (_req: Request, res: Response) => {
 // ── 開催形態比較 ───────────────────────────────────────────────────
 // 開催形態（手動の format > ログ由来の access_type）ごとの集計を横並びで返す。
 // Group Only / Group+ / 事前申請制 などで集客がどう変わるかを比較する。
-// ?series= でシリーズ内に絞った比較も可能（グローバル絞り込みに追従）。
+// ?brand= でブランド内に絞った比較も可能（グローバル絞り込みに追従）。
 router.get('/format-comparison', async (req: Request, res: Response) => {
   try {
     const db = getDatabase()
-    const series = seriesParam(req)
+    const brand = brandParam(req)
     const events = (await db.execute(
-      series
-        ? { sql: 'SELECT id, format, access_type, date FROM events WHERE series = ?', args: [series] }
+      brand
+        ? { sql: 'SELECT id, format, access_type, date FROM events WHERE brand = ?', args: [brand] }
         : 'SELECT id, format, access_type, date FROM events'
     )).rows as any[]
     if (events.length === 0) return ok(res, [])
@@ -932,13 +932,13 @@ router.get('/format-comparison', async (req: Request, res: Response) => {
   } catch (err: any) { fail(res, err.message) }
 })
 
-// シリーズ別の参加者推移（重ね描きチャート用）。
-// 各シリーズについて、イベントごとの {date, event_name, unique_attendees} を時系列で返す。
-router.get('/series-trends', async (_req: Request, res: Response) => {
+// ブランド別の参加者推移（重ね描きチャート用）。
+// 各ブランドについて、イベントごとの {date, event_name, unique_attendees} を時系列で返す。
+router.get('/brand-trends', async (_req: Request, res: Response) => {
   try {
     const db = getDatabase()
     const events = (await db.execute(
-      `SELECT id, name, date, series FROM events WHERE series IS NOT NULL AND series != '' ORDER BY date ASC`
+      `SELECT id, name, date, brand FROM events WHERE brand IS NOT NULL AND brand != '' ORDER BY date ASC`
     )).rows as any[]
     if (events.length === 0) return ok(res, [])
 
@@ -956,18 +956,18 @@ router.get('/series-trends', async (_req: Request, res: Response) => {
       if (s) s.add(String(j.key))
     }
 
-    const bySeries = new Map<string, { date: string; event_name: string; unique_attendees: number }[]>()
+    const byBrand = new Map<string, { date: string; event_name: string; unique_attendees: number }[]>()
     for (const e of events) {
-      const s = e.series as string
-      if (!bySeries.has(s)) bySeries.set(s, [])
-      bySeries.get(s)!.push({
+      const b = e.brand as string
+      if (!byBrand.has(b)) byBrand.set(b, [])
+      byBrand.get(b)!.push({
         date: e.date as string,
         event_name: e.name as string,
         unique_attendees: perEvent.get(e.id as number)!.size,
       })
     }
 
-    ok(res, Array.from(bySeries.entries()).map(([series, points]) => ({ series, points })))
+    ok(res, Array.from(byBrand.entries()).map(([brand, points]) => ({ brand, points })))
   } catch (err: any) { fail(res, err.message) }
 })
 

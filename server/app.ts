@@ -1,7 +1,7 @@
 import express from 'express'
 import { initializeDatabase } from './db/schema.js'
 import eventsRouter from './routes/events.js'
-import seriesRouter from './routes/series.js'
+import brandsRouter from './routes/brands.js'
 import ledgerRouter from './routes/ledger.js'
 import logsRouter from './routes/logs.js'
 import analyticsRouter from './routes/analytics.js'
@@ -65,7 +65,7 @@ export async function buildApp() {
 
   // ── Routes ──────────────────────────────────────────────────────
   app.use('/api/events', requireDatabase, eventsRouter)
-  app.use('/api/series', requireDatabase, seriesRouter)
+  app.use('/api/brands', requireDatabase, brandsRouter)
   app.use('/api/ledger', requireDatabase, ledgerRouter)
   app.use('/api/logs', requireDatabase, logsRouter)
   app.use('/api/analytics', requireDatabase, analyticsRouter)

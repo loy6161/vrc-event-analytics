@@ -32,7 +32,7 @@ function mapEvent(row: any): Event {
     access_type: row.access_type ?? undefined,
     description: row.description ?? undefined,
     tags: jsonToTags(row.tags),
-    series: row.series ?? undefined,
+    brand: row.brand ?? undefined,
     format: row.format ?? undefined,
     shared_event_id: row.shared_event_id ?? undefined,
     created_at: row.created_at,
@@ -115,13 +115,13 @@ export interface CreateEventInput {
   access_type?: string
   description?: string
   tags?: string[]
-  series?: string
+  brand?: string
   format?: string
 }
 
 export async function createEvent(data: CreateEventInput): Promise<Event> {
   const result = await getDatabase().execute({
-    sql: `INSERT INTO events (name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series, format)
+    sql: `INSERT INTO events (name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, brand, format)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       data.name,
@@ -135,11 +135,11 @@ export async function createEvent(data: CreateEventInput): Promise<Event> {
       data.access_type ?? null,
       data.description ?? null,
       tagsToJson(data.tags),
-      data.series || null, // 空文字は未分類(null)として保存
+      data.brand || null, // 空文字は未分類(null)として保存
       data.format || null,
     ],
   })
-  if (data.series) await ensureSeries(data.series) // マスタ同期
+  if (data.brand) await ensureBrand(data.brand) // マスタ同期
   return (await getEventById(Number(result.lastInsertRowid)))!
 }
 
@@ -151,7 +151,7 @@ export async function updateEvent(id: number, data: Partial<CreateEventInput>): 
     sql: `UPDATE events SET
             name = ?, date = ?, start_time = ?, end_time = ?,
             world_id = ?, instance_id = ?, world_name = ?,
-            region = ?, access_type = ?, description = ?, tags = ?, series = ?, format = ?
+            region = ?, access_type = ?, description = ?, tags = ?, brand = ?, format = ?
           WHERE id = ?`,
     args: [
       data.name ?? existing.name,
@@ -165,19 +165,19 @@ export async function updateEvent(id: number, data: Partial<CreateEventInput>): 
       data.access_type ?? existing.access_type ?? null,
       data.description ?? existing.description ?? null,
       tagsToJson(data.tags ?? existing.tags),
-      // 空文字は「シリーズ解除」として null に正規化
-      (data.series ?? existing.series) || null,
+      // 空文字は「ブランド解除」として null に正規化
+      (data.brand ?? existing.brand) || null,
       (data.format ?? existing.format) || null,
       id,
     ],
   })
-  if (data.series) await ensureSeries(data.series) // マスタ同期
+  if (data.brand) await ensureBrand(data.brand) // マスタ同期
   return getEventById(id)
 }
 
-// ── Series ─────────────────────────────────────
+// ── Brand ──────────────────────────────────────
 
-export interface SeriesMeta {
+export interface BrandMeta {
   id: number
   name: string
   color?: string
@@ -187,7 +187,7 @@ export interface SeriesMeta {
   last_date?: string
 }
 
-function mapSeries(row: any): SeriesMeta {
+function mapBrand(row: any): BrandMeta {
   return {
     id: row.id,
     name: row.name,
@@ -199,43 +199,43 @@ function mapSeries(row: any): SeriesMeta {
   }
 }
 
-// シリーズマスタ一覧（メタ＋イベント数・最終開催日）。並びは sort_order → 最終開催日の新しい順。
-export async function getSeriesList(): Promise<SeriesMeta[]> {
+// ブランドマスタ一覧（メタ＋イベント数・最終開催日）。並びは sort_order → 最終開催日の新しい順。
+export async function getBrandList(): Promise<BrandMeta[]> {
   const result = await getDatabase().execute(
     `SELECT s.*,
-       (SELECT COUNT(*) FROM events e WHERE e.series = s.name) as event_count,
-       (SELECT MAX(e.date) FROM events e WHERE e.series = s.name) as last_date
-     FROM series s
+       (SELECT COUNT(*) FROM events e WHERE e.brand = s.name) as event_count,
+       (SELECT MAX(e.date) FROM events e WHERE e.brand = s.name) as last_date
+     FROM brand s
      ORDER BY s.sort_order ASC, last_date DESC, s.name ASC`
   )
-  return (result.rows as any[]).map(mapSeries)
+  return (result.rows as any[]).map(mapBrand)
 }
 
-// 登録済みシリーズ名の一覧（サジェスト・フィルタ用・後方互換）。
-export async function getDistinctSeries(): Promise<string[]> {
-  return (await getSeriesList()).map(s => s.name)
+// 登録済みブランド名の一覧（サジェスト・フィルタ用）。
+export async function getDistinctBrands(): Promise<string[]> {
+  return (await getBrandList()).map(s => s.name)
 }
 
-// 市民権の昇格・失効の判定対象シリーズ名。空配列なら全イベントで判定（後方互換）。
-export async function getCitizenshipTargetSeries(): Promise<string[]> {
+// 市民権の昇格・失効の判定対象ブランド名。空配列なら全イベントで判定（後方互換）。
+export async function getCitizenshipTargetBrands(): Promise<string[]> {
   const result = await getDatabase().execute(
-    `SELECT name FROM series WHERE citizenship_target = 1`
+    `SELECT name FROM brand WHERE citizenship_target = 1`
   )
   return (result.rows as any[]).map(r => String(r.name))
 }
 
-// シリーズ名をマスタへ登録（既存なら無視）。取込・一括設定・編集で新名が現れたら呼ぶ。
-export async function ensureSeries(name: string): Promise<void> {
+// ブランド名をマスタへ登録（既存なら無視）。取込・一括設定・編集で新名が現れたら呼ぶ。
+export async function ensureBrand(name: string): Promise<void> {
   const n = name.trim()
   if (!n) return
   await getDatabase().execute({
-    sql: `INSERT OR IGNORE INTO series (name) VALUES (?)`,
+    sql: `INSERT OR IGNORE INTO brand (name) VALUES (?)`,
     args: [n],
   })
 }
 
-// シリーズのメタ更新（色・市民権対象・並び順）
-export async function updateSeriesMeta(
+// ブランドのメタ更新（色・市民権対象・並び順）
+export async function updateBrandMeta(
   name: string,
   patch: { color?: string | null; citizenship_target?: boolean; sort_order?: number },
 ): Promise<void> {
@@ -247,48 +247,48 @@ export async function updateSeriesMeta(
   if ('sort_order' in patch) { sets.push('sort_order = ?'); args.push(patch.sort_order ?? 0) }
   if (sets.length === 0) return
   args.push(name)
-  await db.execute({ sql: `UPDATE series SET ${sets.join(', ')} WHERE name = ?`, args })
+  await db.execute({ sql: `UPDATE brand SET ${sets.join(', ')} WHERE name = ?`, args })
 }
 
-// シリーズの改名。マスタ名と、全イベントの events.series を一括で書き換える（トランザクション）。
-export async function renameSeries(oldName: string, newName: string): Promise<void> {
+// ブランドの改名。マスタ名と、全イベントの events.brand を一括で書き換える（トランザクション）。
+export async function renameBrand(oldName: string, newName: string): Promise<void> {
   const n = newName.trim()
   if (!n || n === oldName) return
   const db = getDatabase()
   await db.batch([
-    { sql: `UPDATE OR IGNORE series SET name = ? WHERE name = ?`, args: [n, oldName] },
-    { sql: `UPDATE events SET series = ? WHERE series = ?`, args: [n, oldName] },
+    { sql: `UPDATE OR IGNORE brand SET name = ? WHERE name = ?`, args: [n, oldName] },
+    { sql: `UPDATE events SET brand = ? WHERE brand = ?`, args: [n, oldName] },
     // 改名先が既存マスタと衝突した場合に備え、孤立した旧行を掃除
-    { sql: `DELETE FROM series WHERE name = ? AND NOT EXISTS (SELECT 1 FROM events WHERE series = ?)`, args: [oldName, oldName] },
+    { sql: `DELETE FROM brand WHERE name = ? AND NOT EXISTS (SELECT 1 FROM events WHERE brand = ?)`, args: [oldName, oldName] },
   ], 'write')
 }
 
-// シリーズの削除。マスタ行を消し、該当イベントは未分類(null)に戻す。
-export async function deleteSeriesMaster(name: string): Promise<void> {
+// ブランドの削除。マスタ行を消し、該当イベントは未分類(null)に戻す。
+export async function deleteBrandMaster(name: string): Promise<void> {
   const db = getDatabase()
   await db.batch([
-    { sql: `UPDATE events SET series = NULL WHERE series = ?`, args: [name] },
-    { sql: `DELETE FROM series WHERE name = ?`, args: [name] },
+    { sql: `UPDATE events SET brand = NULL WHERE brand = ?`, args: [name] },
+    { sql: `DELETE FROM brand WHERE name = ?`, args: [name] },
   ], 'write')
 }
 
-// シリーズの自動推定。
-//  1. 同じ world_id の過去イベントに series が付いていれば再利用（同じ会場の再訪）
-//  2. ワールド名（空白除去・小文字化）に既知のシリーズ名が含まれていればそれ
-//     例: series "club VERSE" は「【毎週金曜定期ライブ】club VERSE ver1.3」にマッチ
-export async function inferSeries(worldId?: string, worldName?: string): Promise<string | null> {
+// ブランドの自動推定。
+//  1. 同じ world_id の過去イベントに brand が付いていれば再利用（同じ会場の再訪）
+//  2. ワールド名（空白除去・小文字化）に既知のブランド名が含まれていればそれ
+//     例: brand "club VERSE" は「【毎週金曜定期ライブ】club VERSE ver1.3」にマッチ
+export async function inferBrand(worldId?: string, worldName?: string): Promise<string | null> {
   const db = getDatabase()
   if (worldId) {
     const r = await db.execute({
-      sql: `SELECT series FROM events
-            WHERE world_id = ? AND series IS NOT NULL AND series != ''
+      sql: `SELECT brand FROM events
+            WHERE world_id = ? AND brand IS NOT NULL AND brand != ''
             ORDER BY date DESC LIMIT 1`,
       args: [worldId],
     })
-    if (r.rows[0]) return String((r.rows[0] as any).series)
+    if (r.rows[0]) return String((r.rows[0] as any).brand)
   }
   if (worldName) {
-    const known = await getDistinctSeries()
+    const known = await getDistinctBrands()
     const squash = (s: string) => s.toLowerCase().replace(/\s+/g, '')
     const w = squash(worldName)
     for (const s of known) {
@@ -298,14 +298,14 @@ export async function inferSeries(worldId?: string, worldName?: string): Promise
   return null
 }
 
-// 複数イベントへシリーズを一括設定（null で解除）。新名はマスタへも登録。
-export async function bulkSetSeries(eventIds: number[], series: string | null): Promise<number> {
+// 複数イベントへブランドを一括設定（null で解除）。新名はマスタへも登録。
+export async function bulkSetBrand(eventIds: number[], brand: string | null): Promise<number> {
   if (eventIds.length === 0) return 0
-  if (series) await ensureSeries(series)
+  if (brand) await ensureBrand(brand)
   const placeholders = eventIds.map(() => '?').join(',')
   const result = await getDatabase().execute({
-    sql: `UPDATE events SET series = ? WHERE id IN (${placeholders})`,
-    args: [series, ...eventIds],
+    sql: `UPDATE events SET brand = ? WHERE id IN (${placeholders})`,
+    args: [brand, ...eventIds],
   })
   return result.rowsAffected
 }

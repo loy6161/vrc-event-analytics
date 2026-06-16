@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { getDatabase } from '../db/schema.js'
 import {
-  getUsers, updateUser, getUserByDisplayName, getCitizenshipTargetSeries,
+  getUsers, updateUser, getUserByDisplayName, getCitizenshipTargetBrands,
   getAllBadgesByUser, getBadgesForUser, setBadge, removeBadge, getRelatedDisplayNames,
   BADGE_TYPES, type BadgeType,
 } from '../db/queries.js'
@@ -51,7 +51,7 @@ router.delete('/:displayName/badges', async (req, res) => {
 router.get('/citizenship-alerts', async (_req, res) => {
   try {
     const db = getDatabase()
-    const targetSeries = await getCitizenshipTargetSeries()
+    const targetSeries = await getCitizenshipTargetBrands()
 
     // 判定対象イベントID集合（対象シリーズ未設定なら全イベント）
     let targetEventIds: number[] | null = null
@@ -144,19 +144,19 @@ router.get('/citizenship-alerts', async (_req, res) => {
 router.get('/performers', async (req, res) => {
   try {
     const db = getDatabase()
-    const seriesRaw = req.query.series
-    const series = typeof seriesRaw === 'string' && seriesRaw.trim() ? seriesRaw.trim() : null
+    const brandRaw = req.query.brand
+    const brand = typeof brandRaw === 'string' && brandRaw.trim() ? brandRaw.trim() : null
 
     // バッジ（出演者系＋関係者）を持つユーザーを対象にする。
-    // グローバルのシリーズ絞り込み時は「そのシリーズのバッジ or 全体バッジ」を持つ人に限定。
+    // グローバルのブランド絞り込み時は「そのブランドのバッジ or 全体バッジ」を持つ人に限定。
     const badgeRows = (await db.execute({
       sql: `SELECT b.*, u.id as uid, u.user_id, u.is_staff, u.notes as unotes, u.tags as utags
             FROM user_badges b
             JOIN users u ON u.display_name = b.display_name
             WHERE b.badge_type IN ('regular','visitor','performer','manager','staff')
-            ${series ? "AND (b.series = ? OR b.series = '')" : ''}
+            ${brand ? "AND (b.series = ? OR b.series = '')" : ''}
             ORDER BY b.display_name`,
-      args: series ? [series] : [],
+      args: brand ? [brand] : [],
     })).rows as any[]
 
     // ユーザー単位に集約
@@ -180,16 +180,16 @@ router.get('/performers', async (req, res) => {
       })
     }
 
-    // 出演回数・出演履歴（series 指定時はそのシリーズのイベントに限定）
+    // 出演回数・出演履歴（brand 指定時はそのブランドのイベントに限定）
     const performers = await Promise.all(Array.from(byUser.values()).map(async p => {
       const eventsResult = await db.execute({
         sql: `SELECT DISTINCT e.id, e.name, e.date, e.start_time
               FROM player_events pe
               JOIN events e ON e.id = pe.event_id
               WHERE pe.display_name = ? AND pe.event_type = 'join'
-              ${series ? 'AND e.series = ?' : ''}
+              ${brand ? 'AND e.brand = ?' : ''}
               ORDER BY e.date DESC`,
-        args: series ? [p.display_name, series] : [p.display_name],
+        args: brand ? [p.display_name, brand] : [p.display_name],
       })
       p.events = eventsResult.rows
       p.appearance_count = eventsResult.rows.length
@@ -215,12 +215,12 @@ router.get('/performers', async (req, res) => {
 // 軽量版の名簿（外部ツール=loyall Data 用）。'/' は参加者ごとに滞在時間を
 // N+1で算出するため数分かかり、フロント直叩きでタイムアウトする。こちらは
 // 1本の集約クエリで「参加回数・入場回数・初/最終参加」だけを高速に返す（滞在時間は持たない）。
-// ?series= で対象シリーズに絞る（参加回数もそのシリーズ内で再計算）。
+// ?brand= で対象ブランドに絞る（参加回数もそのブランド内で再計算）。
 router.get('/roster', async (req, res) => {
   try {
     const db = getDatabase()
-    const seriesRaw = req.query.series
-    const series = typeof seriesRaw === 'string' && seriesRaw.trim() ? seriesRaw.trim() : null
+    const brandRaw = req.query.brand
+    const brand = typeof brandRaw === 'string' && brandRaw.trim() ? brandRaw.trim() : null
 
     let sql = `SELECT display_name,
                       COUNT(DISTINCT event_id) AS attendance_count,
@@ -230,7 +230,7 @@ router.get('/roster', async (req, res) => {
                FROM player_events
                WHERE event_type = 'join' AND event_id IS NOT NULL AND event_id != 0`
     const args: any[] = []
-    if (series) { sql += ` AND event_id IN (SELECT id FROM events WHERE series = ?)`; args.push(series) }
+    if (brand) { sql += ` AND event_id IN (SELECT id FROM events WHERE brand = ?)`; args.push(brand) }
     sql += ` GROUP BY display_name ORDER BY attendance_count DESC`
 
     const result = await db.execute({ sql, args })
@@ -259,8 +259,8 @@ router.get('/', async (req, res) => {
     const { from, to } = req.query
     const dateFrom = typeof from === 'string' && from ? from : null
     const dateTo = typeof to === 'string' && to ? to : null
-    const seriesRaw = req.query.series
-    const series = typeof seriesRaw === 'string' && seriesRaw.trim() ? seriesRaw.trim() : null
+    const brandRaw = req.query.brand
+    const brand = typeof brandRaw === 'string' && brandRaw.trim() ? brandRaw.trim() : null
 
     const usersWithStats = await Promise.all(users.map(async user => {
       let joinSql = `SELECT pe.timestamp, pe.event_id
@@ -269,8 +269,8 @@ router.get('/', async (req, res) => {
       const joinArgs: any[] = [user.display_name]
       if (dateFrom) { joinSql += ` AND pe.timestamp >= ?`; joinArgs.push(dateFrom) }
       if (dateTo)   { joinSql += ` AND pe.timestamp <= ?`; joinArgs.push(dateTo + 'T23:59:59') }
-      // series 指定時は参加回数・滞在時間・初参加/最終参加をそのシリーズ内だけで計算
-      if (series)   { joinSql += ` AND pe.event_id IN (SELECT id FROM events WHERE series = ?)`; joinArgs.push(series) }
+      // brand 指定時は参加回数・滞在時間・初参加/最終参加をそのブランド内だけで計算
+      if (brand)    { joinSql += ` AND pe.event_id IN (SELECT id FROM events WHERE brand = ?)`; joinArgs.push(brand) }
       joinSql += ` ORDER BY pe.timestamp ASC`
 
       const joinsResult = await db.execute({ sql: joinSql, args: joinArgs })

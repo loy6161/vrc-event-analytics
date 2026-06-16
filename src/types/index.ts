@@ -12,7 +12,7 @@ export interface Event {
   access_type?: string // public, invite, friends, friends+, invite+, group
   description?: string
   tags?: string[] // JSON配列を配列型に変換
-  series?: string // イベントシリーズ名（clubVERSE / theALL / VERSARY 等）。null=未分類
+  brand?: string  // ブランド名（clubVERSE / theALL / VERSARY 等）。null=未分類
   format?: string // 開催形態（手動）: 事前申請制 など。ログ由来の access_type と併用
   shared_event_id?: string // 共有イベント台帳(shared.events)のスラッグ。横断レポートの結合キー
   created_at: string // ISO 8601
@@ -50,8 +50,8 @@ export interface FormatComparison {
   repeat_rate: number
 }
 
-// シリーズマスタ（/api/series）
-export interface SeriesMeta {
+// ブランドマスタ（/api/brands）
+export interface BrandMeta {
   id: number
   name: string
   color?: string
@@ -61,15 +61,15 @@ export interface SeriesMeta {
   last_date?: string
 }
 
-// シリーズ別の参加者推移（/api/analytics/series-trends）
-export interface SeriesTrend {
-  series: string
+// ブランド別の参加者推移（/api/analytics/brand-trends）
+export interface BrandTrend {
+  brand: string
   points: Array<{ date: string; event_name: string; unique_attendees: number }>
 }
 
-// シリーズ比較（/api/analytics/series-comparison）
-export interface SeriesComparison {
-  series: string            // '' = 未分類
+// ブランド比較（/api/analytics/brand-comparison）
+export interface BrandComparison {
+  brand: string             // '' = 未分類
   event_count: number
   first_date: string
   last_date: string

@@ -6,7 +6,7 @@ import { dataCache } from '../utils/dataCache.js'
 const PALETTE = ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6']
 
 export function SeriesManager() {
-  const { seriesMeta, colorOf, refreshSeriesList, series: globalSeries, setSeries } = useSeries()
+  const { seriesMeta, colorOf, refreshSeriesList, series: globalBrand, setSeries } = useSeries()
   const [busy, setBusy] = useState<string | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -14,7 +14,7 @@ export function SeriesManager() {
   const patch = async (name: string, body: any) => {
     setBusy(name)
     try {
-      await fetch(`/api/series/${encodeURIComponent(name)}`, {
+      await fetch(`/api/brands/${encodeURIComponent(name)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -29,24 +29,24 @@ export function SeriesManager() {
     if (!newName || newName === oldName) { setRenaming(null); return }
     setBusy(oldName)
     try {
-      await fetch(`/api/series/${encodeURIComponent(oldName)}/rename`, {
+      await fetch(`/api/brands/${encodeURIComponent(oldName)}/rename`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newName }),
       })
       dataCache.clear()
-      if (globalSeries === oldName) setSeries(newName)
+      if (globalBrand === oldName) setSeries(newName)
       refreshSeriesList()
     } finally { setBusy(null); setRenaming(null) }
   }
 
   const doDelete = async (name: string) => {
-    if (!confirm(`シリーズ「${name}」を削除しますか？\n該当イベントは「未分類」に戻ります（イベント自体やログは消えません）。`)) return
+    if (!confirm(`ブランド「${name}」を削除しますか？\n該当イベントは「未分類」に戻ります（イベント自体やログは消えません）。`)) return
     setBusy(name)
     try {
-      await fetch(`/api/series/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      await fetch(`/api/brands/${encodeURIComponent(name)}`, { method: 'DELETE' })
       dataCache.clear()
-      if (globalSeries === name) setSeries('')
+      if (globalBrand === name) setSeries('')
       refreshSeriesList()
     } finally { setBusy(null) }
   }
@@ -54,7 +54,7 @@ export function SeriesManager() {
   if (seriesMeta.length === 0) {
     return (
       <p style={{ opacity: 0.6, fontSize: 13 }}>
-        まだシリーズがありません。ログ取込やイベント編集でシリーズ名を付けると、ここに表示されます。
+        まだブランドがありません。ログ取込やイベント編集でブランド名を付けると、ここに表示されます。
       </p>
     )
   }
@@ -104,7 +104,7 @@ export function SeriesManager() {
             </div>
 
             <div className="series-mgr-actions">
-              <label className="series-mgr-citizen" title="このシリーズの参加を市民権の昇格・失効の判定に数える">
+              <label className="series-mgr-citizen" title="このブランドの参加を市民権の昇格・失効の判定に数える">
                 <input
                   type="checkbox"
                   checked={s.citizenship_target}
@@ -112,7 +112,7 @@ export function SeriesManager() {
                 />
                 市民権の判定対象
               </label>
-              <button className="series-mgr-del" onClick={() => doDelete(s.name)} title="シリーズを削除（イベントは未分類に戻る）">
+              <button className="series-mgr-del" onClick={() => doDelete(s.name)} title="ブランドを削除（イベントは未分類に戻る）">
                 🗑
               </button>
             </div>

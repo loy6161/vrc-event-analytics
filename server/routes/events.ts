@@ -7,8 +7,8 @@ import {
   deleteEvent,
   mergeEvents,
   recomputeEventTimespan,
-  getDistinctSeries,
-  bulkSetSeries,
+  getDistinctBrands,
+  bulkSetBrand,
   getPlayerEventsByEventId,
   deletePlayerEventsByEventId,
   deleteAvatarSwitchesByEventId,
@@ -38,10 +38,10 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 })
 
-// 登録済みシリーズ名一覧（サジェスト・フィルタ用）。/:id より先に定義（2セグメントなので衝突はしないが明示的に）
-router.get('/series/list', async (_req: Request, res: Response) => {
+// 登録済みブランド名一覧（サジェスト・フィルタ用）。/:id より先に定義（2セグメントなので衝突はしないが明示的に）
+router.get('/brands/list', async (_req: Request, res: Response) => {
   try {
-    ok(res, await getDistinctSeries())
+    ok(res, await getDistinctBrands())
   } catch (err: any) {
     fail(res, err.message)
   }
@@ -72,12 +72,12 @@ router.get('/:id/player-events', async (req: Request, res: Response) => {
 })
 
 router.post('/', async (req: Request, res: Response) => {
-  const { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series, format } = req.body
+  const { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, brand, format } = req.body
   if (!name || typeof name !== 'string') return fail(res, 'name is required', 400)
   if (!date || typeof date !== 'string') return fail(res, 'date is required (YYYY-MM-DD)', 400)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail(res, 'date must be YYYY-MM-DD format', 400)
   try {
-    const event = await createEvent({ name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series, format })
+    const event = await createEvent({ name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, brand, format })
     ok(res, event, 201)
   } catch (err: any) {
     fail(res, err.message)
@@ -87,12 +87,12 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   const id = parseId(req.params.id)
   if (id === null) return fail(res, 'Invalid event id', 400)
-  const { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series, format } = req.body
+  const { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, brand, format } = req.body
   if (date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return fail(res, 'date must be YYYY-MM-DD format', 400)
   }
   try {
-    const event = await updateEvent(id, { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, series, format })
+    const event = await updateEvent(id, { name, date, start_time, end_time, world_id, instance_id, world_name, region, access_type, description, tags, brand, format })
     if (!event) return fail(res, 'Event not found', 404)
     ok(res, event)
   } catch (err: any) {
@@ -100,15 +100,15 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 })
 
-// 複数イベントへシリーズを一括設定（series: null で解除）
-router.post('/bulk-series', async (req: Request, res: Response) => {
-  const { ids, series } = req.body ?? {}
+// 複数イベントへブランドを一括設定（brand: null で解除）
+router.post('/bulk-brand', async (req: Request, res: Response) => {
+  const { ids, brand } = req.body ?? {}
   if (!Array.isArray(ids) || ids.length === 0) return fail(res, 'ids[] が必要です', 400)
-  if (series !== null && typeof series !== 'string') return fail(res, 'series は文字列か null を指定してください', 400)
+  if (brand !== null && typeof brand !== 'string') return fail(res, 'brand は文字列か null を指定してください', 400)
   const parsed = (ids as any[]).map(id => parseId(String(id))).filter((id): id is number => id !== null)
   if (parsed.length === 0) return fail(res, '有効な ids がありません', 400)
   try {
-    const updated = await bulkSetSeries(parsed, typeof series === 'string' && series.trim() ? series.trim() : null)
+    const updated = await bulkSetBrand(parsed, typeof brand === 'string' && brand.trim() ? brand.trim() : null)
     ok(res, { updated })
   } catch (err: any) {
     fail(res, err.message)

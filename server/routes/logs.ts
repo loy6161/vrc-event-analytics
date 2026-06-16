@@ -19,7 +19,7 @@ import {
   findEventByDate,
   updateEvent,
   recomputeEventTimespan,
-  inferSeries,
+  inferBrand,
   setEventSharedId,
   isLogImported,
   recordImportedLog,
@@ -48,7 +48,7 @@ interface AvatarSwitchInput {
 }
 
 interface SaveSessionsResult {
-  createdEvents: { id: number; name: string; date: string; worldName?: string; series?: string; merged?: boolean }[]
+  createdEvents: { id: number; name: string; date: string; worldName?: string; brand?: string; merged?: boolean }[]
   totalInserted: number
   usersUpserted: number
   avatarSwitchesInserted: number
@@ -59,7 +59,7 @@ async function saveSessionsToDB(
   fileName: string,
   cutoffHour: number,
   mainWorld: string,
-  explicitSeries = '',
+  explicitBrand = '',
   avatarSwitches: AvatarSwitchInput[] = [],
 ): Promise<SaveSessionsResult> {
   const norm = (s?: string) => (s ?? '').toLowerCase()
@@ -105,8 +105,8 @@ async function saveSessionsToDB(
           : `${rep.worldName} (${day})`)
       : `イベント ${day}`
 
-    // シリーズ決定: 明示指定 > 自動推定（同じワールドの過去イベント / ワールド名に既知シリーズ名を含む）
-    const series = explicitSeries || ((await inferSeries(rep.worldId, rep.worldName)) ?? undefined) || undefined
+    // ブランド決定: 明示指定 > 自動推定（同じワールドの過去イベント / ワールド名に既知ブランド名を含む）
+    const brand = explicitBrand || ((await inferBrand(rep.worldId, rep.worldName)) ?? undefined) || undefined
 
     let target = await findEventByDate(day)
     let merged = false
@@ -122,8 +122,8 @@ async function saveSessionsToDB(
         patch.access_type = rep.accessType
       }
       // 明示指定は常に勝つ。推定値は未設定のときだけ補完する
-      if (explicitSeries && target.series !== explicitSeries) patch.series = explicitSeries
-      else if (!target.series && series) patch.series = series
+      if (explicitBrand && target.brand !== explicitBrand) patch.brand = explicitBrand
+      else if (!target.brand && brand) patch.brand = brand
       if (Object.keys(patch).length > 0) {
         target = (await updateEvent(target.id, patch))!
       }
@@ -132,7 +132,7 @@ async function saveSessionsToDB(
         name: eventName, date: day, start_time: startTime, end_time: endTime,
         world_id: rep.worldId, world_name: rep.worldName,
         instance_id: rep.instanceId, region: rep.region, access_type: rep.accessType,
-        series,
+        brand,
       })
     }
 
@@ -143,7 +143,7 @@ async function saveSessionsToDB(
       if (ed) await setEventSharedId(target.id, ed.id)
     }
 
-    createdEvents.push({ id: target.id, name: target.name, date: target.date, worldName: target.world_name, series: target.series, merged })
+    createdEvents.push({ id: target.id, name: target.name, date: target.date, worldName: target.world_name, brand: target.brand, merged })
 
     const insertInputs: InsertPlayerEventInput[] = dayPlayerEvents.map(pe => ({
       event_id: target!.id,
@@ -305,9 +305,9 @@ router.post(
   const mainWorldRaw = isTextUpload ? req.query.mainWorld : req.body?.mainWorld
   const mainWorld = typeof mainWorldRaw === 'string' ? mainWorldRaw.trim() : ''
 
-  // シリーズ名（任意）。空なら過去イベントから自動推定
-  const seriesRaw = isTextUpload ? req.query.series : req.body?.series
-  const series = typeof seriesRaw === 'string' ? seriesRaw.trim() : ''
+  // ブランド名（任意）。空なら過去イベントから自動推定
+  const brandRaw = isTextUpload ? req.query.brand : req.body?.brand
+  const brand = typeof brandRaw === 'string' ? brandRaw.trim() : ''
 
   // ── Validate inputs ──────────────────────────────────────────
   let parsed
@@ -391,7 +391,7 @@ router.post(
       await recomputeEventTimespan(event.id)
     }
   } else {
-    const saved = await saveSessionsToDB(allSessions, parsed.fileName, cutoffHour, mainWorld, series)
+    const saved = await saveSessionsToDB(allSessions, parsed.fileName, cutoffHour, mainWorld, brand)
     createdEvents.push(...saved.createdEvents)
     totalInserted = saved.totalInserted
     // userInputs length は saved.usersUpserted で返す
@@ -457,7 +457,7 @@ router.post('/import-parsed', async (req: Request, res: Response) => {
   let cutoffHour = req.body?.cutoffHour != null ? parseInt(String(req.body.cutoffHour), 10) : 6
   if (isNaN(cutoffHour) || cutoffHour < 0 || cutoffHour > 12) cutoffHour = 6
   const mainWorld = typeof req.body?.mainWorld === 'string' ? req.body.mainWorld.trim() : ''
-  const series = typeof req.body?.series === 'string' ? req.body.series.trim() : ''
+  const brand = typeof req.body?.brand === 'string' ? req.body.brand.trim() : ''
   const switches: AvatarSwitchInput[] = Array.isArray(avatarSwitches) ? avatarSwitches : []
 
   try {
@@ -465,7 +465,7 @@ router.post('/import-parsed', async (req: Request, res: Response) => {
       return ok(res, { alreadyImported: true, fileName, fileHash })
     }
 
-    const saved = await saveSessionsToDB(sessions as WorldSession[], fileName, cutoffHour, mainWorld, series, switches)
+    const saved = await saveSessionsToDB(sessions as WorldSession[], fileName, cutoffHour, mainWorld, brand, switches)
     await recordImportedLog(fileName, fileHash, saved.totalInserted)
 
     ok(res, {
