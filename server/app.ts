@@ -9,6 +9,7 @@ import usersRouter from './routes/users.js'
 import youtubeRouter from './routes/youtube.js'
 import exportRouter from './routes/export.js'
 import watcherRouter from './routes/watcher.js'
+import citizensRouter from './routes/citizens.js'
 import { toMessage } from './utils/response.js'
 import path from 'path'
 import fs from 'fs'
@@ -73,6 +74,7 @@ export async function buildApp() {
   app.use('/api/export', requireDatabase, exportRouter)
   app.use('/api/watcher', requireDatabase, watcherRouter)
   app.use('/api/youtube', requireDatabase, youtubeRouter)
+  app.use('/api/citizens', requireDatabase, citizensRouter)
 
   // ── Static files (local production only) ────────────────────────
   // In Vercel, static files are served by the CDN from outputDirectory.

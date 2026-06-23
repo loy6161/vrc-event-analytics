@@ -192,6 +192,26 @@ export async function initializeDatabase(): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_avatar_switches_event ON avatar_switches(event_id);
     CREATE INDEX IF NOT EXISTS idx_avatar_switches_name ON avatar_switches(display_name);
+
+    -- 市民権制度（clubVERSE発祥・将来他ブランドも持ちうる）。
+    -- citizenship_type: 'honorary'(名誉市民) | 'general'(一般市民) | 'associate'(準市民)
+    -- verse_id は通し番号 25-A-0001 形式。A/B/Cは付与時のタイプ識別子（A=名誉, B=一般, C=準）。
+    -- vrchat_display_name はバッジ表示・参加実績照合のキー。discord_id は @表記そのまま。
+    CREATE TABLE IF NOT EXISTS citizens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      verse_id TEXT NOT NULL UNIQUE,
+      vrchat_display_name TEXT NOT NULL,
+      discord_id TEXT,
+      citizenship_type TEXT NOT NULL CHECK(citizenship_type IN ('honorary','general','associate')),
+      granted_date TEXT NOT NULL,
+      brand TEXT NOT NULL DEFAULT 'clubVERSE',
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_citizens_name ON citizens(vrchat_display_name);
+    CREATE INDEX IF NOT EXISTS idx_citizens_brand ON citizens(brand);
+    CREATE INDEX IF NOT EXISTS idx_citizens_type ON citizens(citizenship_type);
   `)
 
   // ── Migrations for pre-existing databases ─────────────────────────
@@ -200,6 +220,98 @@ export async function initializeDatabase(): Promise<void> {
   try {
     await db.execute('ALTER TABLE events ADD COLUMN brand TEXT')
   } catch { /* column already exists */ }
+
+  // ── user_id キー統一（display_name 改名者を同一人物として扱う）────
+  // citizens / user_badges に user_id 列を追加（既存 DB への後付け）。
+  // player_events には当初から user_id 列があり、ほぼ全行に値が入っている。
+  try {
+    await db.execute('ALTER TABLE citizens ADD COLUMN user_id TEXT')
+  } catch { /* column already exists */ }
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_citizens_user_id ON citizens(user_id)')
+
+  try {
+    await db.execute('ALTER TABLE user_badges ADD COLUMN user_id TEXT')
+  } catch { /* column already exists */ }
+  await db.execute('CREATE INDEX IF NOT EXISTS idx_user_badges_user_id ON user_badges(user_id)')
+
+  // ── citizens.user_id バックフィル（冪等）────────────────────────
+  // player_events に同じ display_name で user_id がちょうど1種類あるときだけ埋める。
+  // 0個・複数個 = 曖昧なため NULL のまま放置。
+  await db.execute(`
+    UPDATE citizens SET user_id = (
+      SELECT pe.user_id FROM player_events pe
+      WHERE pe.display_name = citizens.vrchat_display_name
+        AND pe.user_id IS NOT NULL AND pe.user_id != ''
+      GROUP BY pe.user_id
+      HAVING COUNT(*) > 0
+      LIMIT 1
+    )
+    WHERE user_id IS NULL AND (
+      SELECT COUNT(DISTINCT pe.user_id) FROM player_events pe
+      WHERE pe.display_name = citizens.vrchat_display_name
+        AND pe.user_id IS NOT NULL AND pe.user_id != ''
+    ) = 1
+  `)
+  // player_events で解決できなかった残り NULL を display_name_history でも補う。
+  await db.execute(`
+    UPDATE citizens SET user_id = (
+      SELECT dh.user_id FROM display_name_history dh
+      WHERE dh.display_name = citizens.vrchat_display_name
+        AND dh.user_id IS NOT NULL AND dh.user_id != ''
+      GROUP BY dh.user_id
+      HAVING COUNT(*) > 0
+      LIMIT 1
+    )
+    WHERE user_id IS NULL AND (
+      SELECT COUNT(DISTINCT dh.user_id) FROM display_name_history dh
+      WHERE dh.display_name = citizens.vrchat_display_name
+        AND dh.user_id IS NOT NULL AND dh.user_id != ''
+    ) = 1
+  `)
+
+  // ── user_badges.user_id バックフィル（冪等）──────────────────────
+  await db.execute(`
+    UPDATE user_badges SET user_id = (
+      SELECT pe.user_id FROM player_events pe
+      WHERE pe.display_name = user_badges.display_name
+        AND pe.user_id IS NOT NULL AND pe.user_id != ''
+      GROUP BY pe.user_id
+      HAVING COUNT(*) > 0
+      LIMIT 1
+    )
+    WHERE user_id IS NULL AND (
+      SELECT COUNT(DISTINCT pe.user_id) FROM player_events pe
+      WHERE pe.display_name = user_badges.display_name
+        AND pe.user_id IS NOT NULL AND pe.user_id != ''
+    ) = 1
+  `)
+  await db.execute(`
+    UPDATE user_badges SET user_id = (
+      SELECT dh.user_id FROM display_name_history dh
+      WHERE dh.display_name = user_badges.display_name
+        AND dh.user_id IS NOT NULL AND dh.user_id != ''
+      GROUP BY dh.user_id
+      HAVING COUNT(*) > 0
+      LIMIT 1
+    )
+    WHERE user_id IS NULL AND (
+      SELECT COUNT(DISTINCT dh.user_id) FROM display_name_history dh
+      WHERE dh.display_name = user_badges.display_name
+        AND dh.user_id IS NOT NULL AND dh.user_id != ''
+    ) = 1
+  `)
+
+  // ── スレイ（verse_id: 25-B-0021）の手動修正（冪等）─────────────
+  // 台帳の display_name が半角縦棒（|）で登録されていたが、
+  // 来場ログ・VRChat の実表示は全角縦棒（｜ U+FF5C）のため突き合わせが失敗していた。
+  // user_id が未設定（または空）のときだけ更新する（二重適用しない）。
+  await db.execute(`
+    UPDATE citizens
+    SET user_id = 'usr_f781a697-4598-4f06-acaf-0540769c7f8a',
+        vrchat_display_name = 'スレイ｜Sray_AI'
+    WHERE verse_id = '25-B-0021'
+      AND (user_id IS NULL OR user_id = '')
+  `)
   await db.execute('CREATE INDEX IF NOT EXISTS idx_events_brand ON events(brand)')
 
   // 開催形態（手動）。事前申請制・招待制など、ログから取れない運用形態を記録する
