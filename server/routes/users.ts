@@ -263,10 +263,17 @@ router.get('/', async (req, res) => {
     const brand = typeof brandRaw === 'string' && brandRaw.trim() ? brandRaw.trim() : null
 
     const usersWithStats = await Promise.all(users.map(async user => {
+      // user_id があれば改名前の参加も合算する（user_id キー統一リファクタ・2026-06-23）。
+      // join と leave は必ず同じキーで引く（別人扱い防止）。
+      const joinKey     = user.user_id ? 'pe.user_id = ?' : 'pe.display_name = ?'
+      const joinKeyArg  = user.user_id ?? user.display_name
+      const leaveKey    = user.user_id ? 'user_id = ?'    : 'display_name = ?'
+      const leaveKeyArg = joinKeyArg
+
       let joinSql = `SELECT pe.timestamp, pe.event_id
                      FROM player_events pe
-                     WHERE pe.display_name = ? AND pe.event_type = 'join'`
-      const joinArgs: any[] = [user.display_name]
+                     WHERE ${joinKey} AND pe.event_type = 'join'`
+      const joinArgs: any[] = [joinKeyArg]
       if (dateFrom) { joinSql += ` AND pe.timestamp >= ?`; joinArgs.push(dateFrom) }
       if (dateTo)   { joinSql += ` AND pe.timestamp <= ?`; joinArgs.push(dateTo + 'T23:59:59') }
       // brand 指定時は参加回数・滞在時間・初参加/最終参加をそのブランド内だけで計算
@@ -291,9 +298,9 @@ router.get('/', async (req, res) => {
         for (const join of joins) {
           const leaveResult = await db.execute({
             sql: `SELECT timestamp FROM player_events
-                  WHERE display_name = ? AND event_id = ? AND event_type = 'leave' AND timestamp > ?
+                  WHERE ${leaveKey} AND event_id = ? AND event_type = 'leave' AND timestamp > ?
                   ORDER BY timestamp ASC LIMIT 1`,
-            args: [user.display_name, join.event_id, join.timestamp],
+            args: [leaveKeyArg, join.event_id, join.timestamp],
           })
           const leave = leaveResult.rows[0] as any
 
@@ -346,13 +353,25 @@ router.get('/:displayName', async (req, res) => {
       return
     }
 
-    const playerEventsResult = await db.execute({
-      sql: `SELECT pe.event_id, pe.event_type, pe.timestamp
-            FROM player_events pe
-            WHERE pe.display_name = ?
-            ORDER BY pe.timestamp ASC`,
-      args: [user.display_name],
-    })
+    // user_id があれば改名前の参加も合算する（user_id キー統一リファクタ・2026-06-23）。
+    // user_id が無い場合は従来どおり display_name で引く（後方互換）。
+    const playerEventsResult = await db.execute(
+      user.user_id
+        ? {
+            sql: `SELECT pe.event_id, pe.event_type, pe.timestamp
+                  FROM player_events pe
+                  WHERE pe.user_id = ?
+                  ORDER BY pe.timestamp ASC`,
+            args: [user.user_id],
+          }
+        : {
+            sql: `SELECT pe.event_id, pe.event_type, pe.timestamp
+                  FROM player_events pe
+                  WHERE pe.display_name = ?
+                  ORDER BY pe.timestamp ASC`,
+            args: [user.display_name],
+          }
+    )
     const playerEvents = playerEventsResult.rows as any[]
 
     const eventIds = [...new Set(playerEvents.map(pe => pe.event_id).filter(id => id != null && id !== 0))]

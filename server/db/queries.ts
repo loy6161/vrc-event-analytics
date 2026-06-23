@@ -649,12 +649,28 @@ export async function getBadgesForUser(displayName: string): Promise<UserBadge[]
   return (result.rows as any[]).map(mapBadge)
 }
 
-// upsert（同じ 名前×種別×シリーズ ならメモだけ更新）
+// upsert（同じ 名前×種別×シリーズ ならメモだけ更新）。
+// user_id キー統一リファクタ（2026-06-23）: 書き込み時に display_name から user_id を解決して
+// user_id 列にも入れる。ちょうど1個に絞れない場合（0個・複数）は NULL のまま。
 export async function setBadge(displayName: string, badgeType: BadgeType, series: string, note?: string | null): Promise<void> {
-  await getDatabase().execute({
-    sql: `INSERT INTO user_badges (display_name, badge_type, series, note) VALUES (?, ?, ?, ?)
-          ON CONFLICT(display_name, badge_type, series) DO UPDATE SET note = excluded.note`,
-    args: [displayName, badgeType, series ?? '', note ?? null],
+  const db = getDatabase()
+
+  // player_events から user_id を解決（ちょうど1種類のときのみ）
+  const uidResult = await db.execute({
+    sql: `SELECT pe.user_id
+          FROM player_events pe
+          WHERE pe.display_name = ? AND pe.user_id IS NOT NULL AND pe.user_id != ''
+          GROUP BY pe.user_id`,
+    args: [displayName],
+  })
+  const resolvedUserId = uidResult.rows.length === 1
+    ? String((uidResult.rows[0] as any).user_id)
+    : null
+
+  await db.execute({
+    sql: `INSERT INTO user_badges (display_name, badge_type, series, note, user_id) VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(display_name, badge_type, series) DO UPDATE SET note = excluded.note, user_id = COALESCE(user_badges.user_id, excluded.user_id)`,
+    args: [displayName, badgeType, series ?? '', note ?? null, resolvedUserId],
   })
 }
 
