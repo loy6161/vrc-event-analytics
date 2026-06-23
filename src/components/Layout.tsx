@@ -25,6 +25,7 @@ const NAV_GROUPS = [
       { href: '#/users',    icon: '👥', label: 'ユーザー',      match: /^\/users/ },
       { href: '#/youtube',     icon: '📺', label: 'YouTube',       match: /^\/youtube/ },
       { href: '#/performers', icon: '🎤', label: '出演者',        match: /^\/performers/ },
+      { href: '#/citizens',   icon: '🎖️', label: '市民リスト',    match: /^\/citizens/ },
     ],
   },
   {

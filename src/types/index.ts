@@ -80,6 +80,45 @@ export interface BrandComparison {
   repeat_rate: number
 }
 
+// 市民権（clubVERSE発祥・将来他ブランドも持ちうる）
+export type CitizenshipType = 'honorary' | 'general' | 'associate'
+
+export type CitizenExpiryStatus = 'active' | 'warning' | 'expired_no_attendance' | 'expired_inactive'
+
+export interface Citizen {
+  id: number
+  verse_id: string             // 25-A-0001 形式の市民ナンバー
+  vrchat_display_name: string
+  discord_id?: string          // @表記そのまま
+  citizenship_type: CitizenshipType
+  granted_date: string         // YYYY-MM-DD
+  brand: string                // 'clubVERSE' 等
+  notes?: string
+  created_at: string
+  // 全市民共通: 取得日以降の対象ブランドイベント参加実績
+  attendance_count: number
+  total_stay_minutes: number
+  last_attendance_date: string | null
+  // 準市民のみ: 昇格判定（3回以上 & 6時間以上）
+  meets_promotion?: boolean
+  promotion_threshold?: {
+    min_attendance: number
+    min_stay_minutes: number
+  }
+  // 準市民のみ: 失効判定（最終来場から3ヶ月 or 取得後3ヶ月以内来場なしで失効）
+  expiry_status?: CitizenExpiryStatus
+  expiry_days_remaining?: number       // 失効まで残り日数（active/warning時）
+  days_since_last_attendance?: number  // 最終来場からの経過日数（来場ありの時）
+  days_since_grant?: number            // 取得からの経過日数（来場なしの時）
+}
+
+// 市民権タイプ表示メタ（ラベル・色・絵文字）
+export const CITIZENSHIP_META: Record<CitizenshipType, { label: string; emoji: string; color: string; bg: string }> = {
+  honorary:  { label: '名誉市民', emoji: '🎖️', color: '#d4af37', bg: 'rgba(212, 175, 55, 0.15)' },
+  general:   { label: '一般市民', emoji: '👤', color: '#5b9bd5', bg: 'rgba(91, 155, 213, 0.15)' },
+  associate: { label: '準市民',   emoji: '🔰', color: '#2ecc71', bg: 'rgba(46, 204, 113, 0.15)' },
+}
+
 // VRChatプレイヤーイベント
 export interface PlayerEvent {
   id: number

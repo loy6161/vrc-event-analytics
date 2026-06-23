@@ -14,12 +14,13 @@ import { YouTubePage } from './components/YouTubePage'
 import { LogImporter } from './components/LogImporter'
 import { HelpPage } from './components/HelpPage'
 import { PerformersPage } from './components/PerformersPage'
+import { CitizensPage } from './components/CitizensPage'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { SeriesProvider } from './contexts/SeriesContext'
 import { Event } from './types/index.js'
 import './App.css'
 
-type Page = 'dashboard' | 'events' | 'events-new' | 'events-edit' | 'users' | 'users-detail' | 'rankings' | 'reports' | 'insights' | 'youtube' | 'performers' | 'logs' | 'settings' | 'help'
+type Page = 'dashboard' | 'events' | 'events-new' | 'events-edit' | 'users' | 'users-detail' | 'rankings' | 'reports' | 'insights' | 'youtube' | 'performers' | 'citizens' | 'logs' | 'settings' | 'help'
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
@@ -63,6 +64,8 @@ function App() {
         setCurrentPage('youtube')
       } else if (page === 'performers') {
         setCurrentPage('performers')
+      } else if (page === 'citizens') {
+        setCurrentPage('citizens')
       } else if (page === 'logs') {
         setCurrentPage('logs')
       } else if (page === 'settings') {
@@ -178,6 +181,13 @@ function App() {
         return (
           <div className="page">
             <PerformersPage />
+          </div>
+        )
+
+      case 'citizens':
+        return (
+          <div className="page">
+            <CitizensPage />
           </div>
         )
 
