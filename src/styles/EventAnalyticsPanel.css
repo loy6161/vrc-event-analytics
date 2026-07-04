@@ -142,6 +142,28 @@
   padding: 24px;
 }
 
+/* ──── Stacked sections (one-page layout) ──── */
+.analytics-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+}
+
+.analytics-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.analytics-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #2a2f42;
+}
+
 /* ──── Overview tab ──── */
 .overview-tab {
   display: flex;

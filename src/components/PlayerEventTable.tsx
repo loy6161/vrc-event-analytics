@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { createColumnHelper } from '@tanstack/react-table'
 import { DataTable } from './DataTable'
 import { PlayerEvent } from '../types/index.js'
+import type { AvatarUser } from './EventAnalyticsPanel'
 import '../styles/PlayerEventTable.css'
 
 // ──────────────────────────────────────────────────────────────────
@@ -9,26 +10,33 @@ import '../styles/PlayerEventTable.css'
 // ──────────────────────────────────────────────────────────────────
 
 interface PlayerStatsRow {
-  key: string           // user_id or display_name (for dedup)
+  key: string
   userId?: string
   displayName: string
-  hasUserId: boolean    // true = has known VRChat ID
-  visitCount: number    // number of join events
+  hasUserId: boolean
+  visitCount: number
   totalStayMinutes: number
   avgStayMinutes: number
-  firstJoin: string     // ISO timestamp of earliest join
-  lastJoin: string      // ISO timestamp of most-recent join
+  firstJoin: string
+  lastJoin: string
+  // avatar fields (joined from /api/events/:id/avatars by display_name)
+  currentAvatar?: string
+  currentAuthor?: string
+  avatarSwitchCount?: number
+  avatarShortSwitchCount?: number
 }
 
-function aggregatePlayerStats(events: PlayerEvent[]): PlayerStatsRow[] {
+function aggregatePlayerStats(events: PlayerEvent[], avatars: AvatarUser[] = []): PlayerStatsRow[] {
+  const avatarMap = new Map<string, AvatarUser>()
+  for (const a of avatars) avatarMap.set(a.display_name, a)
+
   const sorted = [...events].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
 
-  // Per-user state during fold
   const map = new Map<string, {
     userId?: string
     displayName: string
     joinTimes: string[]
-    stays: number[]      // completed stays in minutes
+    stays: number[]
     pendingJoin: string | null
   }>()
 
@@ -57,6 +65,7 @@ function aggregatePlayerStats(events: PlayerEvent[]): PlayerStatsRow[] {
 
   return Array.from(map.entries()).map(([key, s]) => {
     const total = s.stays.reduce((a, b) => a + b, 0)
+    const av = avatarMap.get(s.displayName)
     return {
       key,
       userId: s.userId,
@@ -67,6 +76,10 @@ function aggregatePlayerStats(events: PlayerEvent[]): PlayerStatsRow[] {
       avgStayMinutes: s.stays.length > 0 ? Math.round(total / s.stays.length) : 0,
       firstJoin: s.joinTimes[0] ?? '',
       lastJoin: s.joinTimes[s.joinTimes.length - 1] ?? '',
+      currentAvatar: av?.current_avatar,
+      currentAuthor: av?.current_author,
+      avatarSwitchCount: av?.switch_count,
+      avatarShortSwitchCount: av?.short_switch_count,
     }
   })
 }
@@ -157,7 +170,7 @@ const statsColumns = [
       const v = info.getValue()
       return v ? <span className="user-id-cell" title={v}>{v}</span> : <span className="na-cell">—</span>
     },
-    size: 260,
+    size: 240,
   }),
   statsColHelper.accessor('visitCount', {
     header: '来場回数',
@@ -165,24 +178,65 @@ const statsColumns = [
     size: 80,
   }),
   statsColHelper.accessor('totalStayMinutes', {
-    header: '総滞在時間',
+    header: '総滞在',
     cell: info => fmtDuration(info.getValue()),
-    size: 110,
+    size: 100,
   }),
   statsColHelper.accessor('avgStayMinutes', {
-    header: '平均滞在時間',
+    header: '平均滞在',
     cell: info => fmtDuration(info.getValue()),
-    size: 110,
+    size: 100,
+  }),
+  statsColHelper.accessor('currentAvatar', {
+    header: 'アバター',
+    cell: info => {
+      const v = info.getValue()
+      const author = info.row.original.currentAuthor
+      if (!v) return <span className="na-cell">—</span>
+      return (
+        <div className="avatar-cell" title={author ? `${v} (by ${author})` : v}>
+          <div className="avatar-name">{v}</div>
+          {author && <div className="avatar-author">by {author}</div>}
+        </div>
+      )
+    },
+    size: 220,
+  }),
+  statsColHelper.accessor('avatarSwitchCount', {
+    header: '切替',
+    cell: info => {
+      const v = info.getValue()
+      if (!v || v === 0) return <span className="na-cell">—</span>
+      return v
+    },
+    size: 60,
+  }),
+  statsColHelper.accessor('avatarShortSwitchCount', {
+    header: '短時間切替',
+    cell: info => {
+      const v = info.getValue() ?? 0
+      if (v === 0) return <span className="na-cell">—</span>
+      const sus = v >= 3
+      return (
+        <span
+          className={sus ? 'av-sus-cell' : ''}
+          title={sus ? '60秒以内の連続切替が多い（クラッシャー等の可能性）' : '60秒以内の連続切替回数'}
+        >
+          {v}{sus ? ' ⚠️' : ''}
+        </span>
+      )
+    },
+    size: 100,
   }),
   statsColHelper.accessor('firstJoin', {
     header: '初回入場',
     cell: info => fmtTimestamp(info.getValue()),
-    size: 180,
+    size: 160,
   }),
   statsColHelper.accessor('lastJoin', {
     header: '最終入場',
     cell: info => fmtTimestamp(info.getValue()),
-    size: 180,
+    size: 160,
   }),
 ]
 
@@ -194,9 +248,10 @@ type ViewMode = 'players' | 'raw'
 
 interface PlayerEventTableProps {
   eventId: number
+  avatars?: AvatarUser[]
 }
 
-export function PlayerEventTable({ eventId }: PlayerEventTableProps) {
+export function PlayerEventTable({ eventId, avatars = [] }: PlayerEventTableProps) {
   const [events, setEvents] = useState<PlayerEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -219,7 +274,7 @@ export function PlayerEventTable({ eventId }: PlayerEventTableProps) {
       .finally(() => setLoading(false))
   }, [eventId])
 
-  const playerStats = useMemo(() => aggregatePlayerStats(events), [events])
+  const playerStats = useMemo(() => aggregatePlayerStats(events, avatars), [events, avatars])
 
   if (loading) {
     return (
