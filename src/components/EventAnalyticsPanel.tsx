@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react'
-import { createColumnHelper } from '@tanstack/react-table'
 import { ConcurrentTimelineChart } from './charts/ConcurrentTimelineChart'
 import { HourlyAttendanceChart } from './charts/HourlyAttendanceChart'
 import { StayDistributionChart } from './charts/StayDistributionChart'
 import { ArrivalDepartureChart } from './charts/ArrivalDepartureChart'
 import { PlayerEventTable } from './PlayerEventTable'
-import { DataTable } from './DataTable'
-import type { Event, EventStats, UserRankingItem, DetailedEventStats } from '../types/index.js'
+import type { Event, EventStats, DetailedEventStats } from '../types/index.js'
 import '../styles/Charts.css'
 import '../styles/EventAnalyticsPanel.css'
 
@@ -19,23 +17,7 @@ interface TimelinePoint {
   concurrent: number
 }
 
-type TabId = 'overview' | 'charts' | 'detailed' | 'attendees' | 'avatars' | 'rankings'
-
-interface Tab {
-  id: TabId
-  label: string
-}
-
-const TABS: Tab[] = [
-  { id: 'overview',  label: '📊 概要' },
-  { id: 'charts',    label: '📈 グラフ' },
-  { id: 'detailed',  label: '🔍 詳細分析' },
-  { id: 'attendees', label: '👥 参加者' },
-  { id: 'avatars',   label: '🧍 アバター' },
-  { id: 'rankings',  label: '🏆 ランキング' },
-]
-
-interface AvatarUser {
+export interface AvatarUser {
   display_name: string
   switch_count: number
   short_switch_count: number
@@ -43,44 +25,6 @@ interface AvatarUser {
   current_author?: string
   avatars: Array<{ name: string; author?: string; count: number; last: string }>
 }
-
-// ──────────────────────────────────────────────────────────────────
-// Rankings table columns
-// ──────────────────────────────────────────────────────────────────
-
-const rankColHelper = createColumnHelper<UserRankingItem>()
-
-const rankColumns = [
-  rankColHelper.accessor('rank', {
-    header: '#',
-    cell: info => <span className="rank-badge">#{info.getValue()}</span>,
-    size: 50,
-  }),
-  rankColHelper.accessor('display_name', {
-    header: '名前',
-    cell: info => info.getValue(),
-  }),
-  rankColHelper.accessor('attendance_count', {
-    header: '参加回数',
-    cell: info => info.getValue(),
-    size: 80,
-  }),
-  rankColHelper.accessor('total_stay_duration', {
-    header: '合計滞在',
-    cell: info => fmtDuration(info.getValue()),
-    size: 110,
-  }),
-  rankColHelper.accessor('avg_stay_duration', {
-    header: '平均滞在',
-    cell: info => fmtDuration(info.getValue()),
-    size: 110,
-  }),
-  rankColHelper.accessor('first_attendance', {
-    header: '初回参加',
-    cell: info => fmtTimestamp(info.getValue()),
-    size: 160,
-  }),
-]
 
 // ──────────────────────────────────────────────────────────────────
 // Helpers
@@ -91,19 +35,6 @@ function fmtDuration(minutes: number): string {
   const h = Math.floor(minutes / 60)
   const m = Math.round(minutes % 60)
   return h > 0 ? `${h}h ${m}m` : `${m}m`
-}
-
-function fmtTimestamp(iso: string): string {
-  if (!iso) return '—'
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit',
-      hour12: false,
-    })
-  } catch {
-    return iso
-  }
 }
 
 function pct(rate: number): string {
@@ -124,10 +55,9 @@ function StatCard({ label, value, sub }: { label: string; value: string | number
   )
 }
 
-function OverviewTab({ stats }: { stats: EventStats }) {
+function OverviewSection({ stats }: { stats: EventStats }) {
   return (
     <div className="overview-tab">
-      {/* Primary KPIs */}
       <div className="stats-grid stats-grid--primary">
         <StatCard label="参加者数" value={stats.total_attendees} sub="再入場は1回扱い" />
         <StatCard label="Join回数" value={stats.total_joins} sub="再入場含む実Join数" />
@@ -139,27 +69,17 @@ function OverviewTab({ stats }: { stats: EventStats }) {
         />
       </div>
 
-      {/* Stay duration metrics */}
       <h4 className="section-subtitle">滞在時間</h4>
       <div className="stats-grid stats-grid--secondary">
-        <StatCard
-          label="平均滞在時間"
-          value={fmtDuration(stats.avg_stay_duration)}
-        />
-        <StatCard
-          label="中央値滞在"
-          value={fmtDuration(stats.median_stay_duration)}
-        />
-        <StatCard
-          label="最長滞在"
-          value={fmtDuration(stats.max_stay_duration)}
-        />
+        <StatCard label="平均滞在時間" value={fmtDuration(stats.avg_stay_duration)} />
+        <StatCard label="中央値滞在" value={fmtDuration(stats.median_stay_duration)} />
+        <StatCard label="最長滞在" value={fmtDuration(stats.max_stay_duration)} />
       </div>
     </div>
   )
 }
 
-function ChartsTab({ stats, timeline }: { stats: EventStats; timeline: TimelinePoint[] }) {
+function ChartsSection({ stats, timeline }: { stats: EventStats; timeline: TimelinePoint[] }) {
   return (
     <div className="charts-tab">
       <div className="chart-block">
@@ -203,10 +123,9 @@ function ScoreGauge({ score, label }: { score: number; label: string }) {
   )
 }
 
-function DetailedTab({ detailed }: { detailed: DetailedEventStats }) {
+function DetailedSection({ detailed }: { detailed: DetailedEventStats }) {
   return (
     <div className="detailed-tab">
-      {/* Engagement Score */}
       <div className="detailed-section">
         <h4 className="section-subtitle">エンゲージメントスコア</h4>
         <div className="engagement-scores">
@@ -217,7 +136,6 @@ function DetailedTab({ detailed }: { detailed: DetailedEventStats }) {
         </div>
       </div>
 
-      {/* First-timer vs Returner */}
       <div className="detailed-section">
         <h4 className="section-subtitle">参加者構成</h4>
         <div className="composition-bar-wrapper">
@@ -250,7 +168,6 @@ function DetailedTab({ detailed }: { detailed: DetailedEventStats }) {
         </div>
       </div>
 
-      {/* Early leaver */}
       <div className="detailed-section">
         <h4 className="section-subtitle">早期離脱（15分以内）</h4>
         <div className="stats-grid stats-grid--secondary">
@@ -259,13 +176,11 @@ function DetailedTab({ detailed }: { detailed: DetailedEventStats }) {
         </div>
       </div>
 
-      {/* Stay distribution */}
       <div className="detailed-section">
         <h4 className="section-subtitle">滞在時間の分布</h4>
         <StayDistributionChart data={detailed.stay_distribution} height={220} />
       </div>
 
-      {/* Arrival / Departure */}
       <div className="detailed-section">
         <h4 className="section-subtitle">到着・離脱タイミング</h4>
         <ArrivalDepartureChart
@@ -276,70 +191,6 @@ function DetailedTab({ detailed }: { detailed: DetailedEventStats }) {
         <div className="chart-legend-note">
           棒グラフ: 5分ごとの到着・離脱人数 ｜ 折れ線: 累計（右軸）
         </div>
-      </div>
-    </div>
-  )
-}
-
-function AvatarTab({ users }: { users: AvatarUser[] }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  if (users.length === 0) {
-    return (
-      <div className="avatar-tab">
-        <p style={{ opacity: 0.6, fontSize: 13, padding: 12 }}>
-          このイベントのログにアバター切替の記録がありませんでした。<br />
-          （アバター情報はVRChatログの「Switching … to avatar …」行から取得します。古いログや一部の環境では記録されないことがあります）
-        </p>
-      </div>
-    )
-  }
-  const toggle = (name: string) => setExpanded(prev => {
-    const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n
-  })
-  return (
-    <div className="avatar-tab">
-      <p className="section-subtitle" style={{ marginTop: 0 }}>
-        参加者が使ったアバターと作者。「短時間切替」は60秒以内の連続切替回数で、多いほどクラッシャー等の可能性（怪しさの目安）。
-      </p>
-      <div className="avatar-table">
-        <div className="avatar-row avatar-row-head">
-          <div className="av-user">User</div>
-          <div className="av-avatar">現在のアバター</div>
-          <div className="av-author">作者</div>
-          <div className="av-num">切替</div>
-          <div className="av-num">短時間</div>
-        </div>
-        {users.map(u => {
-          const open = expanded.has(u.display_name)
-          const sus = u.short_switch_count >= 3
-          return (
-            <div key={u.display_name} className={`avatar-group${open ? ' open' : ''}`}>
-              <div className="avatar-row" onClick={() => u.avatars.length > 1 && toggle(u.display_name)} style={{ cursor: u.avatars.length > 1 ? 'pointer' : 'default' }}>
-                <div className="av-user">
-                  {u.avatars.length > 1 && <span className="av-caret">{open ? '▾' : '▸'}</span>}
-                  {u.display_name}
-                </div>
-                <div className="av-avatar">{u.current_avatar ?? '—'}</div>
-                <div className="av-author">{u.current_author ?? '—'}</div>
-                <div className="av-num">{u.switch_count}</div>
-                <div className={`av-num${sus ? ' av-sus' : ''}`} title={sus ? '短時間での連続切替が多い（要注意）' : undefined}>
-                  {u.short_switch_count > 0 ? u.short_switch_count : '—'}{sus ? ' ⚠️' : ''}
-                </div>
-              </div>
-              {open && u.avatars.length > 1 && (
-                <div className="avatar-sublist">
-                  {u.avatars.map(a => (
-                    <div key={a.name} className="avatar-subrow">
-                      <span className="av-sub-name">{a.name}</span>
-                      <span className="av-sub-author">{a.author ?? '—'}</span>
-                      <span className="av-sub-count">{a.count}回</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })}
       </div>
     </div>
   )
@@ -356,42 +207,33 @@ interface EventAnalyticsPanelProps {
 }
 
 export function EventAnalyticsPanel({ eventId, eventName, event }: EventAnalyticsPanelProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('overview')
-
   const [stats, setStats]       = useState<EventStats | null>(null)
   const [timeline, setTimeline] = useState<TimelinePoint[]>([])
-  const [rankings, setRankings] = useState<UserRankingItem[]>([])
   const [detailed, setDetailed] = useState<DetailedEventStats | null>(null)
   const [avatars, setAvatars]   = useState<AvatarUser[]>([])
-  const [rankSort, setRankSort] = useState<'attendance' | 'stay'>('attendance')
 
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
 
-  // Fetch stats + timeline + detailed in parallel on mount / eventId change
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
     setStats(null)
     setTimeline([])
-    setRankings([])
     setDetailed(null)
-
     setAvatars([])
 
     Promise.all([
       fetch(`/api/analytics/events/${eventId}/stats`).then(r => r.json()),
       fetch(`/api/analytics/events/${eventId}/timeline`).then(r => r.json()),
-      fetch(`/api/analytics/events/${eventId}/rankings?sort=attendance`).then(r => r.json()),
       fetch(`/api/analytics/events/${eventId}/detailed`).then(r => r.json()),
       fetch(`/api/events/${eventId}/avatars`).then(r => r.json()),
     ])
-      .then(([statsRes, timelineRes, rankRes, detailedRes, avatarRes]) => {
+      .then(([statsRes, timelineRes, detailedRes, avatarRes]) => {
         if (cancelled) return
         if (statsRes.success)    setStats(statsRes.data)
         if (timelineRes.success) setTimeline(timelineRes.data)
-        if (rankRes.success)     setRankings(rankRes.data)
         if (detailedRes.success) setDetailed(detailedRes.data)
         if (avatarRes.success)   setAvatars(avatarRes.data)
         if (!statsRes.success)   setError(statsRes.error ?? 'Failed to load stats')
@@ -401,16 +243,6 @@ export function EventAnalyticsPanel({ eventId, eventName, event }: EventAnalytic
 
     return () => { cancelled = true }
   }, [eventId])
-
-  // Re-fetch rankings when sort changes
-  useEffect(() => {
-    fetch(`/api/analytics/events/${eventId}/rankings?sort=${rankSort}`)
-      .then(r => r.json())
-      .then(res => { if (res.success) setRankings(res.data) })
-      .catch(() => {})
-  }, [eventId, rankSort])
-
-  // ── Render states ──────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -428,11 +260,8 @@ export function EventAnalyticsPanel({ eventId, eventName, event }: EventAnalytic
     )
   }
 
-  // ── Layout ─────────────────────────────────────────────────────
-
   return (
     <div className="analytics-panel">
-      {/* Panel header */}
       <div className="analytics-header">
         <div>
           <h3 className="analytics-title">分析 — {eventName}</h3>
@@ -465,63 +294,28 @@ export function EventAnalyticsPanel({ eventId, eventName, event }: EventAnalytic
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div className="analytics-tabs">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            className={`analytics-tab${activeTab === tab.id ? ' active' : ''}`}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <div className="analytics-body analytics-stack">
+        <section className="analytics-section">
+          <h3 className="analytics-section-title">📊 概要</h3>
+          <OverviewSection stats={stats} />
+        </section>
 
-      {/* Tab content */}
-      <div className="analytics-body">
-        {activeTab === 'overview' && <OverviewTab stats={stats} />}
+        <section className="analytics-section">
+          <h3 className="analytics-section-title">📈 グラフ</h3>
+          <ChartsSection stats={stats} timeline={timeline} />
+        </section>
 
-        {activeTab === 'charts' && (
-          <ChartsTab stats={stats} timeline={timeline} />
+        {detailed && (
+          <section className="analytics-section">
+            <h3 className="analytics-section-title">🔍 詳細分析</h3>
+            <DetailedSection detailed={detailed} />
+          </section>
         )}
 
-        {activeTab === 'detailed' && detailed && (
-          <DetailedTab detailed={detailed} />
-        )}
-
-        {activeTab === 'attendees' && (
-          <PlayerEventTable eventId={eventId} />
-        )}
-
-        {activeTab === 'avatars' && <AvatarTab users={avatars} />}
-
-        {activeTab === 'rankings' && (
-          <div className="rankings-tab">
-            <div className="rankings-toolbar">
-              <span className="rankings-sort-label">ソート:</span>
-              <button
-                className={`sort-btn${rankSort === 'attendance' ? ' active' : ''}`}
-                onClick={() => setRankSort('attendance')}
-              >
-                参加回数
-              </button>
-              <button
-                className={`sort-btn${rankSort === 'stay' ? ' active' : ''}`}
-                onClick={() => setRankSort('stay')}
-              >
-                合計滞在時間
-              </button>
-            </div>
-            <DataTable
-              data={rankings}
-              columns={rankColumns}
-              globalFilterPlaceholder="名前で検索..."
-              defaultPageSize={20}
-              emptyMessage="ランキングデータはまだありません"
-            />
-          </div>
-        )}
+        <section className="analytics-section">
+          <h3 className="analytics-section-title">👥 参加者</h3>
+          <PlayerEventTable eventId={eventId} avatars={avatars} />
+        </section>
       </div>
     </div>
   )

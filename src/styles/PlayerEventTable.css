@@ -116,3 +116,31 @@
   flex-shrink: 0;
   cursor: help;
 }
+
+/* ──── Avatar columns ──── */
+.avatar-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.avatar-cell .avatar-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.avatar-cell .avatar-author {
+  font-size: 11px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.av-sus-cell {
+  color: #e74c3c;
+  font-weight: 700;
+}
