@@ -10,6 +10,7 @@
     "build:full": "npm run type-check && npm run build",
     "preview": "vite preview",
     "server": "node --import tsx server/index.ts",
+    "auto-import:clubverse": "node --import tsx scripts/auto-import-clubverse.ts",
     "start": "cross-env NODE_ENV=production node --import tsx server/index.ts",
     "type-check": "tsc --noEmit",
     "test": "node --import tsx --test tests/integration.test.mjs"

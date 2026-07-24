@@ -17,6 +17,7 @@ export interface SharedEvent {
   hashtags: string[]
   performers: string[]
   cadence?: string    // weekly | annual | oneoff
+  occurrenceDates?: string[]
 }
 
 let cache: { at: number; data: SharedEvent[] } | null = null
@@ -24,11 +25,22 @@ const TTL_MS = 5 * 60_000
 
 export async function fetchSharedEvents(force = false): Promise<SharedEvent[]> {
   if (!force && cache && Date.now() - cache.at < TTL_MS) return cache.data
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/events?select=*&order=since.desc`, {
-    headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` },
-  })
+  const headers = { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` }
+  const [res, occurrencesRes] = await Promise.all([
+    fetch(`${SUPABASE_URL}/rest/v1/events?select=*&order=since.desc`, { headers }),
+    fetch(`${SUPABASE_URL}/rest/v1/event_occurrences?select=shared_event_id,date&order=date.asc`, { headers }),
+  ])
   if (!res.ok) throw new Error(`shared.events 読み取り失敗: HTTP ${res.status}`)
+  if (!occurrencesRes.ok) throw new Error(`shared.event_occurrences read failed: HTTP ${occurrencesRes.status}`)
   const data = (await res.json()) as SharedEvent[]
+  const occurrences = (await occurrencesRes.json()) as { shared_event_id: string; date: string }[]
+  const datesByEvent = new Map<string, string[]>()
+  for (const occurrence of occurrences) {
+    const dates = datesByEvent.get(occurrence.shared_event_id) ?? []
+    dates.push(occurrence.date)
+    datesByEvent.set(occurrence.shared_event_id, dates)
+  }
+  for (const event of data) event.occurrenceDates = datesByEvent.get(event.id) ?? []
   cache = { at: Date.now(), data }
   return data
 }
@@ -43,7 +55,12 @@ const spanDays = (e: SharedEvent) => (dayMs(e.until) - dayMs(e.since)) / 86_400_
  */
 export function matchEditionForDate(events: SharedEvent[], date: string): SharedEvent | null {
   const t = dayMs(date)
-  const hits = events.filter(e => dayMs(e.since) <= t && t <= dayMs(e.until))
+  const exact = events.filter(e => e.occurrenceDates?.includes(date))
+  if (exact.length > 0) {
+    exact.sort((a, b) => spanDays(a) - spanDays(b))
+    return exact[0]
+  }
+  const hits = events.filter(e => e.cadence !== 'weekly' && dayMs(e.since) <= t && t <= dayMs(e.until))
   if (hits.length === 0) return null
   hits.sort((a, b) => spanDays(a) - spanDays(b))
   return hits[0]
