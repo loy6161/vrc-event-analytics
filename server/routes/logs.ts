@@ -309,6 +309,15 @@ router.post(
   const brandRaw = isTextUpload ? req.query.brand : req.body?.brand
   const brand = typeof brandRaw === 'string' ? brandRaw.trim() : ''
 
+  // 取り込む論理日の許可リスト（任意・カンマ区切り YYYY-MM-DD）。
+  //   1本のログは複数日にまたがるので、指定が無いと私用プレイの日まで「イベント」として作られる。
+  //   自動取り込み（scripts/ingest_event_logs.mjs）は台帳に登録済みの開催日だけをここに渡す。
+  //   未指定なら従来どおり全日を取り込む（画面からの手動取り込みは挙動が変わらない）。
+  const daysRaw = isTextUpload ? req.query.days : req.body?.days
+  const dayAllow = typeof daysRaw === 'string' && daysRaw.trim()
+    ? new Set(daysRaw.split(',').map(d => d.trim()).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)))
+    : null
+
   // ── Validate inputs ──────────────────────────────────────────
   let parsed
   try {
@@ -353,7 +362,25 @@ router.post(
   }
 
   // ── Segment into world sessions ──────────────────────────────
-  const allSessions = segmentIntoSessions(parsed.events)
+  let allSessions = segmentIntoSessions(parsed.events)
+
+  // 許可リストがあれば、その論理日のセッションだけ残す（eventId 指定時は対象イベントが明示なので適用しない）
+  if (dayAllow && !parsedEventId) {
+    const before = allSessions.length
+    allSessions = allSessions.filter(sn => dayAllow.has(logicalDate(sn.startTime, cutoffHour)))
+    if (allSessions.length === 0) {
+      // 対象日のセッションが無い＝このログは取り込む必要が無い。取込済みとして記録しない
+      // （後で別の日を許可して呼び直せるようにするため）。
+      return ok(res, {
+        skipped: true,
+        reason: 'no sessions on target days',
+        fileName: parsed.fileName,
+        fileHash: parsed.fileHash,
+        sessionsFound: before,
+        days: [...dayAllow],
+      })
+    }
+  }
 
   // ── Auto-create or match events ────────────────────────────────
   const createdEvents: { id: number; name: string; date: string; worldName?: string; merged?: boolean }[] = []
