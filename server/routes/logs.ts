@@ -26,6 +26,7 @@ import {
   getImportedLogs,
   deleteImportedLog,
   insertPlayerEventsBatch,
+  countDistinctPlayers,
   insertAvatarSwitchesBatch,
   upsertUsersBatch,
   recordDisplayNameHistoryBatch,
@@ -113,7 +114,12 @@ async function saveSessionsToDB(
     if (target) {
       merged = true
       const patch: Parameters<typeof updateEvent>[1] = {}
-      if (matchesMain(rep.worldName) && !matchesMain(target.world_name)) {
+      // このファイルの代表セッションが、これまでにこの日の回へ入っていた人数より多いなら、それが本番のインスタンス。
+      // 1日分のログは VRChat の再起動で複数ファイルに分かれる。開場前の準備用インスタンス（Group）しか無い
+      // ファイルが先に取り込まれると、回が「Group」で作られ、後で本番（Group+）のファイルを足しても
+      // 種別が直らなかった（8/14 ΛNDERVERSE・2026-10-10 相談所の指摘で判明）。
+      const bigger = uniqueCount(rep) > await countDistinctPlayers(target.id)
+      if ((matchesMain(rep.worldName) && !matchesMain(target.world_name)) || (!mainWorld && bigger)) {
         patch.name = eventName
         patch.world_id = rep.worldId
         patch.world_name = rep.worldName

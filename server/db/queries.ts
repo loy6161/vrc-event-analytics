@@ -382,6 +382,15 @@ export async function insertPlayerEventsBatch(events: InsertPlayerEventInput[]):
   return inserted
 }
 
+/** その回に既に入っている参加者の人数（user_id が無い行は表示名で数える） */
+export async function countDistinctPlayers(eventId: number): Promise<number> {
+  const r = await getDatabase().execute({
+    sql: 'SELECT COUNT(DISTINCT COALESCE(user_id, display_name)) AS n FROM player_events WHERE event_id = ?',
+    args: [eventId],
+  })
+  return Number((r.rows[0] as any)?.n ?? 0)
+}
+
 export async function getPlayerEventsByEventId(eventId: number): Promise<PlayerEvent[]> {
   const result = await getDatabase().execute({
     sql: 'SELECT * FROM player_events WHERE event_id = ? ORDER BY timestamp ASC',
