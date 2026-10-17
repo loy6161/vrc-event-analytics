@@ -31,6 +31,14 @@ export interface ParsedInstanceEvent {
 
 export type ParsedLogEvent = ParsedPlayerEvent | ParsedWorldEvent | ParsedInstanceEvent
 
+// アバター切替（画面側の src/utils/logParser.ts と同じ形。/api/logs/import-parsed の avatarSwitches にそのまま渡せる）
+export interface ParsedAvatarSwitch {
+  displayName: string
+  avatarName: string
+  author?: string
+  timestamp: string
+}
+
 export interface LogFileParseResult {
   fileName: string
   fileHash: string
@@ -38,6 +46,7 @@ export interface LogFileParseResult {
   playerEvents: ParsedPlayerEvent[]
   worldEvents: ParsedWorldEvent[]
   instanceEvents: ParsedInstanceEvent[]
+  avatarSwitches: ParsedAvatarSwitch[]
   summary: {
     totalLines: number
     parsedEvents: number
@@ -85,6 +94,12 @@ const ACCESS_HIDDEN_RE = /~hidden\(/
 const ACCESS_FRIENDS_RE = /~friends\(/
 const ACCESS_CAN_REQUEST_INVITE_RE = /~canRequestInvite/
 const ACCESS_GROUP_RE = /~group\(/
+
+// アバター切替: "[Behaviour] Switching <表示名> to avatar <アバター名>"（画面側と同じ式）
+// 2026-10-17: サーバー側はこれを読んでおらず、夜間の自動取り込み（/parse・scripts/auto-import-events.ts）の回は切替が0件だった
+const AVATAR_SWITCH_RE = /\[Behaviour\] Switching (.+?) to avatar (.+)$/
+// アバターの作者: "[AssetBundleDownloadManager] [N] Unpacking Avatar (<アバター名> by <作者>)"
+const AVATAR_AUTHOR_RE = /Unpacking Avatar \((.+) by (.+)\)$/
 
 // ──────────────────────────────────────────────
 // Timestamp conversion
@@ -276,6 +291,8 @@ export function parseLogContent(content: string, fileName: string): LogFileParse
   const worldEvents: ParsedWorldEvent[] = []
   const instanceEvents: ParsedInstanceEvent[] = []
   const uniquePlayers = new Set<string>()
+  const rawSwitches: { displayName: string; avatarName: string; timestamp: string }[] = []
+  const authorByAvatar = new Map<string, string>() // アバター名 → 作者（Unpacking 行から）
 
   // content.split(/\r?\n/) は全行を配列に展開するため、大きいファイルで
   // ピークメモリが2倍になりプロセスが落ちることがある。
@@ -292,7 +309,17 @@ export function parseLogContent(content: string, fileName: string): LogFileParse
     totalLines++
 
     const event = parseLine(line)
-    if (!event) continue
+    if (!event) {
+      const sw = line.match(AVATAR_SWITCH_RE)
+      if (sw) {
+        const ts = line.match(TIMESTAMP_RE)
+        if (ts) rawSwitches.push({ displayName: sw[1].trim(), avatarName: sw[2].trim(), timestamp: parseTimestamp(ts[1]) })
+        continue
+      }
+      const au = line.match(AVATAR_AUTHOR_RE)
+      if (au) authorByAvatar.set(au[1].trim(), au[2].trim())
+      continue
+    }
 
     events.push(event)
 
@@ -328,6 +355,7 @@ export function parseLogContent(content: string, fileName: string): LogFileParse
     playerEvents,
     worldEvents,
     instanceEvents,
+    avatarSwitches: rawSwitches.map(s => ({ ...s, author: authorByAvatar.get(s.avatarName) })),
     summary: {
       totalLines,
       parsedEvents: events.length,
