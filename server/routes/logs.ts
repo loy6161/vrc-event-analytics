@@ -391,6 +391,7 @@ router.post(
   // ── Auto-create or match events ────────────────────────────────
   const createdEvents: { id: number; name: string; date: string; worldName?: string; merged?: boolean }[] = []
   let totalInserted = 0
+  let avatarSwitchesInserted = 0
 
   if (event) {
     // ── Existing event: link sessions to it ─────────────────────
@@ -423,10 +424,16 @@ router.post(
       totalInserted = await insertPlayerEventsBatch(insertInputs)
       await recomputeEventTimespan(event.id)
     }
+    // その回の日のアバター切替も同じ回に入れる（saveSessionsToDB と同じ論理日の区切り）
+    const ev = event
+    avatarSwitchesInserted = await insertAvatarSwitchesBatch(parsed.avatarSwitches
+      .filter(sw => logicalDate(sw.timestamp, cutoffHour) === ev.date)
+      .map(sw => ({ event_id: ev.id, display_name: sw.displayName, avatar_name: sw.avatarName, avatar_author: sw.author ?? null, timestamp: sw.timestamp, log_file: parsed.fileName })))
   } else {
-    const saved = await saveSessionsToDB(allSessions, parsed.fileName, cutoffHour, mainWorld, brand)
+    const saved = await saveSessionsToDB(allSessions, parsed.fileName, cutoffHour, mainWorld, brand, parsed.avatarSwitches)
     createdEvents.push(...saved.createdEvents)
     totalInserted = saved.totalInserted
+    avatarSwitchesInserted = saved.avatarSwitchesInserted
     // userInputs length は saved.usersUpserted で返す
     const userInputsLen = saved.usersUpserted
 
@@ -441,6 +448,7 @@ router.post(
       sessionsFound: allSessions.length,
       createdEvents,
       playerEventsInserted: totalInserted,
+      avatarSwitchesInserted,
       usersUpserted: userInputsLen,
       logSummary: parsed.summary,
     })

@@ -22,7 +22,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { parseLogFile, segmentIntoSessions, logicalDate, type WorldSession } from '../server/services/log-parser.js'
+import { parseLogFile, segmentIntoSessions, logicalDate, type WorldSession, type ParsedAvatarSwitch } from '../server/services/log-parser.js'
 
 const DEFAULT_API_BASE = 'https://vrc-event-analytics.onrender.com'
 const STABLE_AGE_MS = 10 * 60 * 1000        // 書き込み中のログを掴まない（最終更新から10分は待つ）
@@ -117,11 +117,11 @@ function uniquePlayers(sessions: WorldSession[]) {
   return new Set(sessions.flatMap(s => s.playerEvents.map(e => (e as any).userId || e.displayName))).size
 }
 
-async function postImport(fileName: string, fileHash: string, sessions: WorldSession[], brand: string) {
+async function postImport(fileName: string, fileHash: string, sessions: WorldSession[], brand: string, avatarSwitches: ParsedAvatarSwitch[]) {
   const r = await fetch(`${apiBase}/api/logs/import-parsed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fileName, fileHash, sessions, cutoffHour: CUTOFF_HOUR, brand, force: true }),
+    body: JSON.stringify({ fileName, fileHash, sessions, avatarSwitches, cutoffHour: CUTOFF_HOUR, brand, force: true }),
   })
   const text = await r.text()
   let body: any
@@ -193,13 +193,15 @@ async function main() {
       continue
     }
 
-    const result = await postImport(file.name, parsed.fileHash, sessions, brand)
+    // アバター切替は対象日の分だけ渡す（2026-10-17 まで渡しておらず、自動取り込みの回は切替が0件だった）
+    const switches = parsed.avatarSwitches.filter(sw => byDay.has(logicalDate(sw.timestamp, CUTOFF_HOUR)))
+    const result = await postImport(file.name, parsed.fileHash, sessions, brand, switches)
     imported++
     for (const day of hitDays) {
       const t = targets.get(day)!
       const created = result.createdEvents?.find((c: any) => c.date === day)
       if (created?.id) { await linkOccurrence(t, created.id); linked += t.occIds.length }
-      console.log(`  ${day} ${t.sid}: vrc_event=${created?.id ?? '?'} 回${t.occIds.length}件 取込${result.playerEventsInserted ?? 0}件`)
+      console.log(`  ${day} ${t.sid}: vrc_event=${created?.id ?? '?'} 回${t.occIds.length}件 取込${result.playerEventsInserted ?? 0}件 アバター切替${result.avatarSwitchesInserted ?? 0}件`)
     }
     state[file.name] = { size: file.stat.size, mtimeMs: file.stat.mtimeMs, result: `imported:${hitDays.join('/')}` }
   }

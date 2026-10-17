@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { parseLogFile, segmentIntoSessions, logicalDate, type WorldSession } from '../server/services/log-parser.js'
+import { parseLogFile, segmentIntoSessions, logicalDate, type WorldSession, type ParsedAvatarSwitch } from '../server/services/log-parser.js'
 
 const CLUBVERSE_WORLD_ID = 'wrld_ee479ef0-efd0-48a5-b6f2-0cb7e4793bd3'
 const DEFAULT_API_BASE = 'https://vrc-event-analytics.onrender.com'
@@ -113,7 +113,7 @@ function selectClubverseSessions(sessions: WorldSession[]) {
   )
 }
 
-async function postImport(fileName: string, fileHash: string, sessions: WorldSession[]) {
+async function postImport(fileName: string, fileHash: string, sessions: WorldSession[], avatarSwitches: ParsedAvatarSwitch[]) {
   const response = await fetch(`${apiBase}/api/logs/import-parsed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -121,6 +121,7 @@ async function postImport(fileName: string, fileHash: string, sessions: WorldSes
       fileName,
       fileHash,
       sessions,
+      avatarSwitches,
       cutoffHour: 6,
       mainWorld: 'club VERSE',
       brand: 'clubVERSE',
@@ -181,7 +182,7 @@ async function main() {
 
     for (const day of dates) await ensureOccurrence(day)
     await fetch(`${apiBase}/api/ledger/events?force=1`)
-    const result = await postImport(file.name, parsed.fileHash, sessions)
+    const result = await postImport(file.name, parsed.fileHash, sessions, parsed.avatarSwitches.filter(sw => dates.includes(logicalDate(sw.timestamp, 6))))
     await fetch(`${apiBase}/api/ledger/sync`, { method: 'POST' })
     const summaryResponse = await fetch(`${apiBase}/api/ledger/events/clubverse/vrc-summary`)
     const summaryBody: any = await summaryResponse.json()
