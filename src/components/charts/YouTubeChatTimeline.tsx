@@ -4,6 +4,7 @@ import {
   ComposedChart, Line,
 } from 'recharts'
 import '../../styles/Charts.css'
+import { parseDbUtc } from '../../utils/time'
 
 // ──────────────────────────────────────────────
 // Concurrent Viewers Chart
@@ -19,7 +20,7 @@ export function ViewerTimelineChart({ data }: ViewerTimelineProps) {
   }
 
   const formatted = data.map(d => ({
-    time: new Date(d.recorded_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+    time: parseDbUtc(d.recorded_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
     viewers: d.concurrent_viewers,
   }))
 
