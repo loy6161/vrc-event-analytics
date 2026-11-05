@@ -69,3 +69,35 @@ describe('書き込み API のトークン認証', () => {
     } finally { delete process.env.VRC_EA_WRITE_TOKEN }
   })
 })
+
+describe('公開サーバーではサーバー上のファイルを読ませない', () => {
+  const withProd = async (fn) => {
+    const prev = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    delete process.env.ALLOW_SERVER_LOG_FILES
+    try { await fn() } finally {
+      if (prev === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = prev
+    }
+  }
+
+  it('ログフォルダ一覧は 403 で、中身を返さない', async () => withProd(async () => {
+    const r = await fetch(`${base}/api/logs/files?dir=${encodeURIComponent(tmpDir)}`)
+    assert.equal(r.status, 403)
+    const body = await r.json()
+    assert.equal(body.success, false)
+    assert.ok(!JSON.stringify(body).includes(tmpDir))
+  }))
+
+  it('filePath 指定の解析は 403', async () => withProd(async () => {
+    const r = await fetch(`${base}/api/logs/parse`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath: path.join(tmpDir, 'test.db') }),
+    })
+    assert.equal(r.status, 403)
+  }))
+
+  it('ローカル実行（production 以外）では従来どおり使える', async () => {
+    const r = await fetch(`${base}/api/logs/files?dir=${encodeURIComponent(tmpDir)}`)
+    assert.equal(r.status, 200)
+  })
+})
