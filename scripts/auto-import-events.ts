@@ -45,6 +45,10 @@ const allDays = process.argv.includes('--all-days')
 const days = Math.max(1, Number(arg('days') ?? 120))
 const sinceArg = arg('since')
 const apiBase = (process.env.VRC_ANALYTICS_URL || DEFAULT_API_BASE).replace(/\/$/, '')
+
+// 本番が VRC_EA_WRITE_TOKEN で書き込みを守っているときに送るヘッダ（未設定なら何も足さない）
+const writeAuth = (): Record<string, string> =>
+  process.env.VRC_EA_WRITE_TOKEN ? { Authorization: `Bearer ${process.env.VRC_EA_WRITE_TOKEN}` } : {}
 const logDir = arg('dir') || process.env.VRC_LOG_DIR || path.join(
   process.env.USERPROFILE || os.homedir(), 'AppData', 'LocalLow', 'VRChat', 'VRChat',
 )
@@ -120,7 +124,7 @@ function uniquePlayers(sessions: WorldSession[]) {
 async function postImport(fileName: string, fileHash: string, sessions: WorldSession[], brand: string, avatarSwitches: ParsedAvatarSwitch[]) {
   const r = await fetch(`${apiBase}/api/logs/import-parsed`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...writeAuth() },
     body: JSON.stringify({ fileName, fileHash, sessions, avatarSwitches, cutoffHour: CUTOFF_HOUR, brand, force: true }),
   })
   const text = await r.text()
@@ -208,7 +212,7 @@ async function main() {
 
   if (!dryRun && imported > 0) {
     // VRC側イベントを台帳スラッグへ再リンク（ブランド紐付けの更新）
-    await fetch(`${apiBase}/api/ledger/sync`, { method: 'POST' }).catch(() => null)
+    await fetch(`${apiBase}/api/ledger/sync`, { method: 'POST', headers: writeAuth() }).catch(() => null)
   }
   if (!dryRun) saveState(state)
   console.log(JSON.stringify({ targetDays: targets.size, scanned: files.length, skipped, candidates, imported, linked, dryRun }))

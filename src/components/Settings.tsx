@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { SeriesManager } from './SeriesManager'
 import '../styles/Settings.css'
+import { getWriteToken, setWriteToken } from '../utils/writeAuth'
 
 interface SettingsData {
   vrchatLogDir: string
@@ -22,6 +23,7 @@ export function Settings() {
   })
 
   const [saved, setSaved] = useState(false)
+  const [writeToken, setWriteTokenInput] = useState(getWriteToken)
   const [saveMessage, setSaveMessage] = useState('')
 
   // Load settings from localStorage on mount
@@ -52,6 +54,7 @@ export function Settings() {
         autoMonitoring: settings.autoMonitoring,
       })
     )
+    setWriteToken(writeToken)
     setSaveMessage('✓ Settings saved')
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
@@ -197,6 +200,29 @@ export function Settings() {
             <p className="input-hint">
               配信を上げているチャンネルを1行に1つ（<code>@ハンドル</code> / チャンネルID <code>UC...</code> / URL）。
               YouTubeページの「チャンネルから取得」で、最近のライブ配信をまとめて取り込み＆日付でイベント自動紐づけします。
+            </p>
+          </div>
+        </section>
+
+        {/* 書き込み用トークン（仮の文言） */}
+        <section className="settings-section">
+          <div className="section-header">
+            <h2>🔑 書き込み用トークン</h2>
+            <p>サーバーで書き込みの認証を有効にしたときに入力します</p>
+          </div>
+          <div className="form-group">
+            <label htmlFor="writeToken">トークン</label>
+            <input
+              id="writeToken"
+              type="password"
+              className="text-input"
+              value={writeToken}
+              onChange={e => { setWriteTokenInput(e.target.value); setSaved(false) }}
+              placeholder="管理者から受け取ったトークン"
+              autoComplete="off"
+            />
+            <p className="input-hint">
+              このブラウザにだけ保存されます。空のまま保存すると削除します。
             </p>
           </div>
         </section>

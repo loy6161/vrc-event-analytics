@@ -22,6 +22,10 @@ const dryRun = process.argv.includes('--dry-run')
 const rescan = process.argv.includes('--rescan')
 const days = Math.max(1, Number(arg('days') ?? 120))
 const apiBase = (process.env.VRC_ANALYTICS_URL || DEFAULT_API_BASE).replace(/\/$/, '')
+
+// 本番が VRC_EA_WRITE_TOKEN で書き込みを守っているときに送るヘッダ（未設定なら何も足さない）
+const writeAuth = (): Record<string, string> =>
+  process.env.VRC_EA_WRITE_TOKEN ? { Authorization: `Bearer ${process.env.VRC_EA_WRITE_TOKEN}` } : {}
 const logDir = process.env.VRC_LOG_DIR || path.join(
   process.env.USERPROFILE || os.homedir(),
   'AppData', 'LocalLow', 'VRChat', 'VRChat',
@@ -116,7 +120,7 @@ function selectClubverseSessions(sessions: WorldSession[]) {
 async function postImport(fileName: string, fileHash: string, sessions: WorldSession[], avatarSwitches: ParsedAvatarSwitch[]) {
   const response = await fetch(`${apiBase}/api/logs/import-parsed`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...writeAuth() },
     body: JSON.stringify({
       fileName,
       fileHash,
@@ -183,7 +187,7 @@ async function main() {
     for (const day of dates) await ensureOccurrence(day)
     await fetch(`${apiBase}/api/ledger/events?force=1`)
     const result = await postImport(file.name, parsed.fileHash, sessions, parsed.avatarSwitches.filter(sw => dates.includes(logicalDate(sw.timestamp, 6))))
-    await fetch(`${apiBase}/api/ledger/sync`, { method: 'POST' })
+    await fetch(`${apiBase}/api/ledger/sync`, { method: 'POST', headers: writeAuth() })
     const summaryResponse = await fetch(`${apiBase}/api/ledger/events/clubverse/vrc-summary`)
     const summaryBody: any = await summaryResponse.json()
     for (const day of dates) {
