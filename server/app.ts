@@ -11,6 +11,7 @@ import exportRouter from './routes/export.js'
 import watcherRouter from './routes/watcher.js'
 import citizensRouter from './routes/citizens.js'
 import { toMessage } from './utils/response.js'
+import { requireWriteToken } from './middleware/write-auth.js'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -27,7 +28,7 @@ export async function buildApp() {
   // ── CORS ────────────────────────────────────────────────────────
   app.use((req: express.Request, res: express.Response, next: express.NextFunction): void => {
     res.header('Access-Control-Allow-Origin', '*')
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept')
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Write-Token')
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
     if (req.method === 'OPTIONS') {
       res.sendStatus(200)
@@ -65,6 +66,8 @@ export async function buildApp() {
   }
 
   // ── Routes ──────────────────────────────────────────────────────
+  // 書き込み系はトークン認証（VRC_EA_WRITE_TOKEN 未設定なら素通し）
+  app.use('/api', requireWriteToken)
   app.use('/api/events', requireDatabase, eventsRouter)
   app.use('/api/brands', requireDatabase, brandsRouter)
   app.use('/api/ledger', requireDatabase, ledgerRouter)

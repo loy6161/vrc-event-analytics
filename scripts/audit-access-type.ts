@@ -16,6 +16,10 @@ import path from 'path'
 import { parseLogFile, segmentIntoSessions, logicalDate, type WorldSession } from '../server/services/log-parser.js'
 
 const API = (process.env.VRC_ANALYTICS_URL || 'https://vrc-event-analytics.onrender.com').replace(/\/$/, '')
+
+// 本番が VRC_EA_WRITE_TOKEN で書き込みを守っているときに送るヘッダ（未設定なら何も足さない）
+const writeAuth = (): Record<string, string> =>
+  process.env.VRC_EA_WRITE_TOKEN ? { Authorization: `Bearer ${process.env.VRC_EA_WRITE_TOKEN}` } : {}
 const CUTOFF_HOUR = 6
 const apply = process.argv.includes('--apply')
 const dirArg = process.argv.find(a => a.startsWith('--dir='))?.slice(6)
@@ -69,7 +73,7 @@ async function main() {
     console.log(`   保存: ${ev.access_type}  →  本番: ${best.accessType}（${best.worldName}・${uniq(best)}人）`)
     if (apply) {
       const r = await fetch(`${API}/api/events/${ev.id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        method: 'PUT', headers: { 'Content-Type': 'application/json', ...writeAuth() },
         body: JSON.stringify({ access_type: best.accessType, instance_id: best.instanceId, world_id: best.worldId, world_name: best.worldName, region: best.region }),
       })
       console.log(`   → 修正 HTTP ${r.status}`)

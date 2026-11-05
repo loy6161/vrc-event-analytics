@@ -208,6 +208,14 @@ function fail(res: Response, message: string, status = 500) {
   res.status(status).json({ success: false, error: message, timestamp: new Date().toISOString() })
 }
 
+// ── サーバー上のファイルを読む機能の可否 ─────────────────────────
+// ログディレクトリの一覧（GET /files）と filePath 指定の解析（POST /parse）は、
+// 自分の PC で動かすとき専用。公開サーバー（NODE_ENV=production）では
+// サーバー内のファイルを読ませないよう既定で止める。必要なら ALLOW_SERVER_LOG_FILES=1。
+function serverFileAccessAllowed(): boolean {
+  return process.env.NODE_ENV !== 'production' || process.env.ALLOW_SERVER_LOG_FILES === '1'
+}
+
 // ── Routes ───────────────────────────────────────────────────────
 
 /**
@@ -231,6 +239,9 @@ router.get('/', async (_req: Request, res: Response) => {
  *   dir  - optional custom directory path
  */
 router.get('/files', async (req: Request, res: Response) => {
+  if (!serverFileAccessAllowed()) {
+    return fail(res, 'この環境ではサーバー上のログフォルダは参照できません。ログはアップロードで取り込んでください', 403)
+  }
   try {
     const dir = typeof req.query.dir === 'string' ? req.query.dir : getDefaultLogDirectory()
 
@@ -331,6 +342,9 @@ router.post(
       const displayFileName = fileName ?? 'output_log.txt'
       parsed = parseLogContent(fileContent, displayFileName)
     } else if (filePath && typeof filePath === 'string') {
+      if (!serverFileAccessAllowed()) {
+        return fail(res, 'この環境ではサーバー上のファイルは指定できません。ログはアップロードで取り込んでください', 403)
+      }
       const absPath = path.resolve(filePath)
       if (!fs.existsSync(absPath)) {
         return fail(res, `File not found: ${absPath}`, 400)
