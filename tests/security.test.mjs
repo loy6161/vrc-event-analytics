@@ -101,3 +101,33 @@ describe('公開サーバーではサーバー上のファイルを読ませな�
     assert.equal(r.status, 200)
   })
 })
+
+describe('イベント結合で意図しない削除をしない', () => {
+  const create = async (name) => {
+    const r = await fetch(`${base}/api/events`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, date: '2025-01-01' }),
+    })
+    assert.equal(r.status, 201)
+    return (await r.json()).data.id
+  }
+  const exists = async (id) => (await fetch(`${base}/api/events/${id}`)).status === 200
+  const merge = (targetId, sourceIds) => fetch(`${base}/api/events/merge`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetId, sourceIds }),
+  })
+
+  it('結合先が元の一覧に入っていても、結合先は消えない', async () => {
+    const a = await create('merge-self')
+    const r = await merge(a, [a])
+    assert.equal(r.status, 200)
+    assert.ok(await exists(a))
+  })
+
+  it('結合先が存在しないときは 404 で、元のイベントは消えない', async () => {
+    const b = await create('merge-src')
+    const r = await merge(99999999, [b])
+    assert.equal(r.status, 404)
+    assert.ok(await exists(b))
+  })
+})

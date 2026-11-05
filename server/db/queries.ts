@@ -339,7 +339,12 @@ export async function recomputeEventTimespan(eventId: number): Promise<void> {
 
 export async function mergeEvents(targetId: number, sourceIds: number[]): Promise<Event | null> {
   const db = getDatabase()
-  const stmts = sourceIds.flatMap(srcId => [
+  // 先にターゲットの存在を確かめる（無いまま進むと、移し先の無いまま元イベントだけ消える）
+  if (!(await getEventById(targetId))) return null
+  // ターゲット自身が元に混ざっていると、ターゲットを消してしまうので除く
+  const sources = [...new Set(sourceIds)].filter(id => id !== targetId)
+  if (sources.length === 0) return getEventById(targetId)
+  const stmts = sources.flatMap(srcId => [
     { sql: 'UPDATE player_events SET event_id = ? WHERE event_id = ?', args: [targetId, srcId] },
     { sql: 'UPDATE OR IGNORE avatar_switches SET event_id = ? WHERE event_id = ?', args: [targetId, srcId] },
     { sql: 'DELETE FROM events WHERE id = ?', args: [srcId] },
