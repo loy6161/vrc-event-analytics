@@ -175,19 +175,37 @@ export async function fetchAllChatMessages(
   onPage?: (pageCount: number, totalSoFar: number) => void,
 ): Promise<RawChatMessage[]> {
   const yt = getClient()
+  return paginateChatMessages(
+    async (pageToken) => (await yt.liveChatMessages.list({
+      part: ['snippet', 'authorDetails'],
+      liveChatId,
+      maxResults: 2000,
+      pageToken,
+    })).data,
+    onPage,
+  )
+}
+
+/** 1回の取得で読むページ数の上限（2000件×500ページ＝最大100万件） */
+export const MAX_CHAT_PAGES = 500
+
+/**
+ * ページ送りの本体（テストで差し替えられるよう取得関数を引数で受ける）。
+ * 配信中のチャットは新着が無くても nextPageToken を返し続けるので、
+ * 「0件のページが来たら追いついた」とみなして止める。加えてページ数に上限を設ける。
+ */
+export async function paginateChatMessages(
+  listPage: (pageToken: string | undefined) => Promise<youtube_v3.Schema$LiveChatMessageListResponse>,
+  onPage?: (pageCount: number, totalSoFar: number) => void,
+  maxPages = MAX_CHAT_PAGES,
+): Promise<RawChatMessage[]> {
   const allMessages: RawChatMessage[] = []
   let pageToken: string | undefined
   let pageCount = 0
 
   do {
-    const res = await yt.liveChatMessages.list({
-      part: ['snippet', 'authorDetails'],
-      liveChatId,
-      maxResults: 2000,
-      pageToken,
-    })
-
-    const items = res.data.items ?? []
+    const data = await listPage(pageToken)
+    const items = data.items ?? []
     for (const item of items) {
       const msg = parseChatMessage(item)
       if (msg) allMessages.push(msg)
@@ -196,12 +214,11 @@ export async function fetchAllChatMessages(
     pageCount++
     if (onPage) onPage(pageCount, allMessages.length)
 
-    pageToken = res.data.nextPageToken ?? undefined
-
-    // For live streams, pollingIntervalMillis indicates wait time.
-    // For replay, we just paginate through.
-    if (res.data.offlineAt) {
-      // Stream is offline — replay mode, continue paginating
+    pageToken = data.nextPageToken ?? undefined
+    if (items.length === 0) break
+    if (pageCount >= maxPages) {
+      console.warn(`[chat] ページ数の上限(${maxPages})に達したため取得を打ち切りました`)
+      break
     }
   } while (pageToken)
 
